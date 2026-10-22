@@ -1,0 +1,141 @@
+https://tahir.azzunique.cloud/api/v1/commission
+Request method
+POST
+applyGST: false
+applyTDS: true
+gstPercent: 0
+isActive: true
+mode: "COMMISSION"
+roleId: "5acb365f-19a4-4bc4-891c-14365254eaf2"
+scope: "ROLE"
+serviceProviderMappingId: "d81ab721-63bd-40d7-9462-9c3c9ac50fa7"
+slabs: [{minAmount: 1, maxAmount: 1000, value: 2}]
+supportsSlab: true
+targetUserId: null
+tdsPercent: 6
+type: "FLAT"
+value: null
+
+//create payout
+amount: 10
+beneficiaryAccount: "0748815362"
+beneficiaryBankName: "Kotak Mahindra Bank"
+beneficiaryIfsc: "KKBK0RTGSMI"
+beneficiaryMobile: "9649730196"
+beneficiaryName: "Arbaz Khan"
+mode: "IMPS"
+remarks: ""
+serviceProviderMappingId: "eafd375b-3cf4-4a6d-bf3e-f5c157ba3f89"
+
+
+
+https://arbaz.azzunique.cloud/api/v1/express-beneficiary-bank-detail
+Request method
+POST
+
+areaPinCode: "823652"
+mobileNumber: "8628455353"
+name: "jfhkjsdgh"
+
+
+https://arbaz.azzunique.cloud/api/v1/bank-verification/penny-drop
+Request method
+POST
+account_number: "04970110055021"
+ifsc_code: "UCBA0000497"
+
+{
+    "success": true,
+    "message": "Success",
+    "timestamp": "2026-10-14T08:04:52.325Z",
+    "path": "/v1/bank-verification/penny-drop",
+    "data": {
+        "verificationId": "cdf99c58-3327-4c7c-9a46-ebacb62d9adc",
+        "transactionId": "6f9f185b-224f-470d-8962-0851545ce713",
+        "refId": "VERIFYMV7TQX4Z17C9109E",
+        "status": "SUCCESS",
+        "message": "Success",
+        "beneficiaryName": "MOHAMMAD TAHIR",
+        "accountNumber": "04970110055021",
+        "ifscCode": "UCBA0000497",
+        "amount": 1,
+        "netAmount": 1,
+        "providerReference": "BENEVAL8c25ed30db65411e8e9ef0e3509c116b",
+        "pricing": {
+            "baseAmount": 1,
+            "surcharge": 0,
+            "commission": 0,
+            "tds": 0,
+            "gst": 0
+        },
+        "providerResponse": {
+            "status": true,
+            "message": "Success",
+            "beneficiaryName": "MOHAMMAD TAHIR",
+            "providerReference": "BENEVAL8c25ed30db65411e8e9ef0e3509c116b",
+            "transactionRefNo": "BENEVAL8c25ed30db65411e8e9ef0e3509c116b",
+            "responseCode": "00",
+            "networkTransactionRefId": "628713006708",
+            "requestDetails": {
+                "usrtxnrefno": "375142633",
+                "txntype": "IMPSP2A",
+                "chantxnrefno": "375142633"
+            },
+            "raw": {
+                "statuscode": 200,
+                "status": true,
+                "message": "Success",
+                "reference_id": 375142633,
+                "data": {
+                    "nwtxnrefid": "628713006708",
+                    "reqdtls": {
+                        "usrtxnrefno": "375142633",
+                        "txntype": "IMPSP2A",
+                        "chantxnrefno": "375142633"
+                    },
+                    "nwrespmessg": "Success",
+                    "txnrefno": "BENEVAL8c25ed30db65411e8e9ef0e3509c116b",
+                    "nwrespcode": "00",
+                    "c_name": "MOHAMMAD TAHIR"
+                },
+                "p_refid": "VERIFYMV7TQX4Z17C9109E"
+            }
+        }
+    }
+}
+
+
+
+//inititae express transfer
+ 
+payload
+amount: 1
+beneficiaryAccount: "0748815362"
+beneficiaryBankName: "Kotak Mahindra Bank"
+beneficiaryIfsc: "KKBK0RTGSMI"
+beneficiaryMobile: "9649730196"
+beneficiaryName: "arbaz khan"
+mode: "IMPS"
+remarks: "test"
+serviceProviderMappingId: "e1354f4a-892c-49a8-bfa7-cb1cdaab6150"    
+
+
+{
+    "success": true,
+    "message": "Success",
+    "timestamp": "2026-10-20T09:31:20.163Z",
+    "path": "/v1/express-transfer",
+    "data": {
+        "transactionId": "67bb983b-6093-4291-847f-6829fe18b8ff",
+        "txnId": "ET67722725",
+        "status": "SUCCESS",
+        "message": " ",
+        "beneficiaryAccount": "0748815362",
+        "beneficiaryName": "arbaz khan",
+        "amount": 1,
+        "mode": "IMPS",
+        "providerReference": "629326023731",
+        "utrNo": null,
+        "rrn": "629326023731"
+    }
+}
