@@ -11,7 +11,6 @@
 // import KycAlertModal from '@/components/modal/profileKyc/kycAlertModal';
 // import { PrevioutKycApiCall } from '@/redux/slices/profileKycSlice';
 
-
 // const HomeScreen = () => {
 //   const { user } = useSelector((state: any) => state.auth);
 //   const id = user?.user?.id

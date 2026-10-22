@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, TouchableOpacity } from 'react-native';
 
+
 const InternetPage = ({onRetry}:any) => {
   return (
     <View style={styles.container}>
