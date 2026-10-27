@@ -85,3 +85,26 @@ export const getServiceMapingIdDataApiCall = async (dispatch) => {
    }
 };
 
+export const verifyPanApiCall  = async (payload,dispatch) => {
+  try {
+    // dashboard?fromDate=2026-10-08&toDate=
+    dispatch(setLoading(true))
+    const { BASE_URL ,token} = await company();
+    const res = await fetch(`${BASE_URL}/pan-verification`, {
+      method: "POST",
+      body:JSON.stringify(payload),
+      headers: {
+        "Content-Type":'application/json',
+         Authorization: `Bearer ${token}`,
+      },
+     });
+
+    const data = await res.json();
+     return data;
+   } catch (error) {
+      showError("Faled", error?.message || "server not respond")
+   }finally{
+     dispatch(setLoading(false));
+   }
+};
+

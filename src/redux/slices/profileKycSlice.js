@@ -94,19 +94,19 @@ export const kycSubmitApiCall = async (payload,dispatch) => {
   try {
     dispatch(setLoading(true));
     const { BASE_URL,token } = await company();
-    const res = await axios.post(`${BASE_URL}/kyc/submit`,payload,{
+
+    const {data} = await axios.post(`${BASE_URL}/kyc/submit`,payload,{
         headers:{
              Authorization: `Bearer ${token}`,
         }
     });
-    console.log(payload);
-    
-    const data = data?.data
+ console.log(data);
+ 
      if(data?.success === true){
          showSuccess("Success", data?.message)
          router.replace('/(tabs)')
          dispatch(setCities(data?.data))
-      return data?.data;
+      return data;
      }
    }finally{
      dispatch(setLoading(false));

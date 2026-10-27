@@ -1,5 +1,5 @@
 // ProfileKycScreen.tsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -34,6 +34,11 @@ import {
   getAllStatesApiCall,
   kycSubmitApiCall,
 } from '@/redux/slices/profileKycSlice';
+import {
+  getServiceMapingIdDataApiCall,
+  verifyPanApiCall,
+} from '@/redux/slices/serviceSlice';
+import { showError } from '@/components/service/AlertService';
 
 /* ----------------- types ----------------- */
 
@@ -329,11 +334,23 @@ const ProfileKycScreen = () => {
   const { user } = useSelector((state: any) => state.auth);
   const id = user?.user?.id;
 
+  const servicesState = useSelector((state: any) => state?.services);
+  const serviceMapRaw = servicesState?.serviceMapingId?.mappings;
+
+  const servicesdata = useMemo(() => {
+    if (!Array.isArray(serviceMapRaw)) return undefined;
+    return serviceMapRaw.find(
+      (item: any) =>
+        (item?.serviceCode ?? '').toUpperCase() === 'PAN_VERIFICATION',
+    );
+  }, [serviceMapRaw]);
+
   const [step, setStep] = useState(0);
 
   const [showDobPicker, setShowDobPicker] = useState(false);
   const [openPicker, setOpenPicker] = useState<null | 'state' | 'city'>(null);
   const [uploadingField, setUploadingField] = useState<FieldName | null>(null);
+  const [verifyingPan, setVerifyingPan] = useState(false);
 
   /* ---------- Redux slice data ---------- */
   const states: StateItem[] = useSelector(
@@ -355,6 +372,7 @@ const ProfileKycScreen = () => {
     trigger,
     reset,
     setValue,
+    getValues,
     watch,
     formState: { errors },
   } = useForm<ProfileKycFormValues>({
@@ -383,9 +401,10 @@ const ProfileKycScreen = () => {
   const selectedStateId = watch('state');
   const selectedCityId = watch('city');
 
-  /* ---------- load states once ---------- */
+  /* ---------- load states + services once ---------- */
   useEffect(() => {
     getAllStatesApiCall(dispatch);
+    getServiceMapingIdDataApiCall(dispatch);
   }, [dispatch]);
 
   /* ---------- load cities when state changes ---------- */
@@ -414,9 +433,9 @@ const ProfileKycScreen = () => {
       ? states?.find((s) => s.id === backendStateId)
       : undefined;
 
-  const cityMatch = backendCityId && Array.isArray(cities)
-  ? cities.find((c: any) => c?.id === backendCityId)
-  : undefined;
+    const cityMatch = backendCityId && Array.isArray(cities)
+      ? cities.find((c: any) => c?.id === backendCityId)
+      : undefined;
 
     reset({
       pan: docByType('PAN')?.documentNumber ?? '',
@@ -444,7 +463,45 @@ const ProfileKycScreen = () => {
   const currentFields = useMemo(() => STEPS[step].fields, [step]);
   const isLastStep = step === STEPS.length - 1;
 
-  /* -------------- build FormData (same pattern as AddFundModal) -------------- */
+  /* ---------- PAN verification ---------- */
+  const handlePanVerifybnt = useCallback(async () => {
+    const panNumber = (getValues('pan') ?? '').trim().toUpperCase();
+    if (!panNumber) {
+      showError('Please enter PAN number first.');
+      return;
+    }
+    if (!servicesdata?.id) {
+      showError('PAN verification service is not available right now.');
+      return;
+    }
+
+    try {
+      setVerifyingPan(true);
+      const payload = {
+        panNumber,
+        serviceProviderMappingId: servicesdata.id,
+      };
+
+      // NOTE: pass payload to the API call (original code dropped it)
+      const res = await verifyPanApiCall(payload, dispatch);
+
+      if (res?.success === true) {
+        const data = res?.data ?? {};
+        // Map each field to its correct form field (original set first_name 3x)
+        if (data.firstName) setValue('first_name', data.firstName);
+        if (data.lastName) setValue('last_name', data.lastName);
+        if (data.fatherName) setValue('father_name', data.fatherName);
+      } else {
+        showError(res?.message);
+      }
+    } catch (error: any) {
+      showError(error?.message ?? 'Unable to verify PAN.');
+    } finally {
+      setVerifyingPan(false);
+    }
+  }, [dispatch, getValues, setValue, servicesdata?.id]);
+
+  /* -------------- build FormData — UNCHANGED -------------- */
   const submit = async (values: ProfileKycFormValues) => {
     const formData = new FormData();
 
@@ -536,7 +593,7 @@ const ProfileKycScreen = () => {
 
   const handleBack = () => {
     if (step === 0) {
-      reset();
+      // Don't reset the form — would wipe prefilled KYC data
       if (router.canGoBack()) router.back();
     } else {
       setStep((s) => s - 1);
@@ -595,6 +652,63 @@ const ProfileKycScreen = () => {
   const renderField = (name: FieldName) => {
     const meta = FIELD_META[name];
     const errorMsg = errors[name]?.message as string | undefined;
+
+    /* ---- PAN (with Verify button) ---- */
+    if (name === 'pan') {
+      return (
+        <View key={name} style={styles.field}>
+          {renderLabel(name)}
+          <View style={styles.panRow}>
+            <Controller
+              control={control}
+              name="pan"
+              render={({ field: { onChange, onBlur, value } }) => (
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.panInput,
+                    {
+                      color: colors.text,
+                      borderColor: errorMsg ? colors.error : colors.border,
+                      backgroundColor: colors.surface,
+                    },
+                  ]}
+                  placeholder={meta.placeholder}
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="characters"
+                  onBlur={onBlur}
+                  value={value == null ? '' : String(value)}
+                  onChangeText={(t) => onChange(t.toUpperCase())}
+                  maxLength={10}
+                />
+              )}
+            />
+            <TouchableOpacity
+              onPress={handlePanVerifybnt}
+              disabled={verifyingPan}
+              style={[
+                styles.verifyBtn,
+                {
+                  backgroundColor: colors.buttonPrimary,
+                  opacity: verifyingPan ? 0.7 : 1,
+                },
+              ]}
+            >
+              {verifyingPan ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.verifyBtnText}>Verify</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+          {errorMsg ? (
+            <Text style={[styles.error, { color: colors.error }]}>
+              {errorMsg}
+            </Text>
+          ) : null}
+        </View>
+      );
+    }
 
     /* ---- DOCUMENT picker ---- */
     if (meta.isDocument) {
@@ -819,7 +933,7 @@ const ProfileKycScreen = () => {
             }))}
             onClose={() => setOpenPicker(null)}
             onSelect={(uuid) => {
-              const currentState = watch('state');
+              const currentState = getValues('state');
               setValue('state', uuid, { shouldValidate: true });
               if (uuid !== currentState) {
                 setValue('city', '', { shouldValidate: false });
@@ -964,9 +1078,7 @@ const ProfileKycScreen = () => {
               value={value == null ? '' : String(value)}
               onChangeText={onChange}
               maxLength={
-                name === 'pan'
-                  ? 10
-                  : name === 'aadhaar'
+                name === 'aadhaar'
                   ? 12
                   : name === 'pinCode'
                   ? 6
@@ -1115,6 +1227,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     minHeight: 46,
   },
+  panRow: { flexDirection: 'row', gap: 8 },
+  panInput: { flex: 1 },
+  verifyBtn: {
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 46,
+  },
+  verifyBtnText: { color: '#fff', fontWeight: '700' },
   error: { fontSize: 12, marginTop: 4, fontWeight: '500' },
   optionRow: { flexDirection: 'row', gap: 10 },
   option: {
@@ -1129,6 +1251,7 @@ const styles = StyleSheet.create({
     gap: 12,
     padding: 20,
     borderTopWidth: StyleSheet.hairlineWidth,
+    paddingBottom:50
   },
   secondaryBtn: {
     flex: 1,

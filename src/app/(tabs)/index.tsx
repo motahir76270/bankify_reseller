@@ -190,7 +190,7 @@ const DashboardScreen = () => {
     checkUserStatus,
     pendingModalVisible,
     addFundVisible,
-    profileKycModalVisible,
+    // profileKycModalVisible,
   ]);
 
   const onRefresh = async () => {
@@ -264,10 +264,12 @@ const DashboardScreen = () => {
   const handleServiceBtn = (item: string) => {
     if (item === "Fund Request") {
       router.push("/screens/services/fundRequest");
-    } else if (item === "Express Transfer") {
+    } else if (item === "Express") {
       router.push("/screens/services/expressTransfer/ETHistory");
     } else if (item === "Payout") {
       router.push("/screens/services/payout/payout");
+    }else{
+      console.log("AEPS btn Click")
     }
   };
 
@@ -518,19 +520,25 @@ const DashboardScreen = () => {
               icon: "add-circle-outline",
               label: "Add Fund",
               target: "Fund Request",
-              grad: ["#6366F1", "#8B5CF6"] as [string, string],
+              grad: ["#6366F1", "#a98fe6"] as [string, string],
             },
             {
               icon: "swap-horizontal-outline",
-              label: "Transfer",
-              target: "Express Transfer",
-              grad: ["#0EA5E9", "#06B6D4"] as [string, string],
+              label: "Express",
+              target: "Express",
+              grad: ["#096996", "#8dd4e0"] as [string, string],
             },
             {
               icon: "receipt-outline",
               label: "Payout",
               target: "Payout",
-              grad: ["#F59E0B", "#EF4444"] as [string, string],
+              grad: ["#F59E0B", "#8b3333"] as [string, string],
+            },
+             {
+              icon: "finger-print-outline",
+              label: "AEPS",
+              target: "AEPS",
+              grad: ["#6af0c8", "#dd9a9a"] as [string, string],
             },
           ].map((a) => (
             <ScalePressable
@@ -545,7 +553,7 @@ const DashboardScreen = () => {
                   end={{ x: 1, y: 1 }}
                   style={styles.quickActionTile}
                 >
-                  <Ionicons name={a.icon as any} size={22} color="#FFFFFF" />
+                  <Ionicons name={a.icon as any} size={26} color="#FFFFFF" />
                 </LinearGradient>
                 <Text
                   style={[styles.quickActionLabel, { color: colors.text }]}

@@ -57,5 +57,7 @@ Join our community of developers creating universal apps.
 <!-- npm uninstall react-native-easebuzz-sdk -->
 
 //banks account
+//add fund
 //expres tranfer
 //payout
+//historys
