@@ -7,7 +7,7 @@ import React, {
   useEffect,
   useMemo,
   useRef,
-  useState,
+  useState
 } from "react";
 import {
   ActivityIndicator,
@@ -19,18 +19,18 @@ import {
   StyleSheet,
   Text,
   useColorScheme,
-  View,
+  View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useDispatch, useSelector } from "react-redux";
 import Svg, {
   Circle,
   Defs,
   LinearGradient as Linear,
   Path,
   RadialGradient,
-  Stop,
+  Stop
 } from "react-native-svg";
+import { useDispatch, useSelector } from "react-redux";
 
 import { checkFundStatusApiCall } from "@/redux/slices/addFundSlice";
 import { getMeApiCall } from "@/redux/slices/authSlice";
@@ -41,9 +41,9 @@ import AddFundModal from "@/components/modal/addFund/minFundFormModal";
 import PendingStatusModal from "@/components/modal/addFund/pendingFundModal";
 import KycAlertModal from "@/components/modal/profileKyc/kycAlertModal";
 import UserProfileModal from "@/components/modal/userPorfileModal";
-import { LinearGradient } from "expo-linear-gradient";
 import { showError } from "@/components/service/AlertService";
 import { FullScreenLoader } from "@/hooks/use-screensLoder";
+import { LinearGradient } from "expo-linear-gradient";
 
 /* ---------------- Types ---------------- */
 type WalletBalance = {
@@ -98,7 +98,7 @@ type DashboardData = {
 const DashboardScreen = () => {
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
-  const colors = Colors[isDark ? "dark" : "light"];
+  const colors = Colors[isDark ? "dark" : "light"]; 
   const insets = useSafeAreaInsets();
 
   const dispatch = useDispatch();
@@ -137,18 +137,20 @@ const DashboardScreen = () => {
   const checkUserStatus = useCallback(
     async (isRefresh = false) => {
       try {
-        const storedUser = JSON.parse((await AsyncStorage.getItem("user")) as any);
+        const storedUser = JSON.parse(
+          (await AsyncStorage.getItem("user")) as any,
+        );
         const token = JSON.parse((await AsyncStorage.getItem("token")) as any);
 
         if (!storedUser && !token) {
-          if (!isRefresh) router.replace("/(auth)/initial");
-          return;
+          router.replace("/(auth)/initial");
         }
 
         const res = await getMeApiCall(dispatch);
         const fundRes = await checkFundStatusApiCall(dispatch);
         const statusFundReq = fundRes?.at(0);
-
+          
+         
         if (
           res?.wallet?.balance === 0 &&
           res?.user?.isKycVerified === false &&
@@ -210,7 +212,7 @@ const DashboardScreen = () => {
     const n = Number(value) || 0;
     if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`;
     if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
-    if (n >= 1000) return `₹${(n / 1000).toFixed(1)}K`;
+    // if (n >= 1000) return `₹${(n / 1000).toFixed(1)}K`;
     return `₹${n}`;
   };
 
@@ -230,8 +232,6 @@ const DashboardScreen = () => {
     wallet.totalBalance > 0
       ? Math.round((wallet.availableBalance / wallet.totalBalance) * 100)
       : 0;
-
- 
 
   const sparklineData = useMemo(() => {
     if (!data?.dateWise || data.dateWise.length === 0) return null;
@@ -268,8 +268,8 @@ const DashboardScreen = () => {
       router.push("/screens/services/expressTransfer/ETHistory");
     } else if (item === "Payout") {
       router.push("/screens/services/payout/payout");
-    }else{
-      console.log("AEPS btn Click")
+    } else {
+      console.log("AEPS btn Click");
     }
   };
 
@@ -342,7 +342,11 @@ const DashboardScreen = () => {
                 },
               ]}
             >
-              <Ionicons name="shield-checkmark" size={10} color={brandPrimary} />
+              <Ionicons
+                name="shield-checkmark"
+                size={10}
+                color={brandPrimary}
+              />
               <Text style={[styles.rolePillText, { color: brandPrimary }]}>
                 {data?.role ?? "USER"}
               </Text>
@@ -468,7 +472,6 @@ const DashboardScreen = () => {
                   <Text style={styles.heroSubText}>vs earlier period</Text>
                 </View>
               </View>
-
             </View>
 
             {/* Sparkline trend */}
@@ -534,7 +537,7 @@ const DashboardScreen = () => {
               target: "Payout",
               grad: ["#F59E0B", "#8b3333"] as [string, string],
             },
-             {
+            {
               icon: "finger-print-outline",
               label: "AEPS",
               target: "AEPS",
@@ -555,9 +558,7 @@ const DashboardScreen = () => {
                 >
                   <Ionicons name={a.icon as any} size={26} color="#FFFFFF" />
                 </LinearGradient>
-                <Text
-                  style={[styles.quickActionLabel, { color: colors.text }]}
-                >
+                <Text style={[styles.quickActionLabel, { color: colors.text }]}>
                   {a.label}
                 </Text>
               </View>
@@ -726,83 +727,97 @@ const DashboardScreen = () => {
             <View
               style={[styles.card, { backgroundColor: cardBg, borderColor }]}
             >
-              {data.recentTransactions.slice(0, 5).map((t: any, idx: number) => {
-                const status = (t?.status ?? "").toUpperCase();
-                const iconCfg =
-                  status === "SUCCESS"
-                    ? { name: "checkmark-circle" as const, color: successColor }
-                    : status === "PENDING"
-                      ? { name: "time" as const, color: warnColor }
-                      : status === "FAILED"
-                        ? { name: "close-circle" as const, color: dangerColor }
-                        : { name: "swap-horizontal" as const, color: infoColor };
-                const amt = Number(t?.amount ?? 0);
-                return (
-                  <View key={t?._id ?? idx}>
-                    <View style={styles.txnRow}>
-                      <View
-                        style={[
-                          styles.txnIcon,
-                          { backgroundColor: `${iconCfg.color}15` },
-                        ]}
-                      >
-                        <Ionicons
-                          name={iconCfg.name}
-                          size={16}
-                          color={iconCfg.color}
-                        />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={[styles.menuLabel, { color: colors.text }]}
-                          numberOfLines={1}
+              {data.recentTransactions
+                .slice(0, 5)
+                .map((t: any, idx: number) => {
+                  const status = (t?.status ?? "").toUpperCase();
+                  const iconCfg =
+                    status === "SUCCESS"
+                      ? {
+                          name: "checkmark-circle" as const,
+                          color: successColor,
+                        }
+                      : status === "PENDING"
+                        ? { name: "time" as const, color: warnColor }
+                        : status === "FAILED"
+                          ? {
+                              name: "close-circle" as const,
+                              color: dangerColor,
+                            }
+                          : {
+                              name: "swap-horizontal" as const,
+                              color: infoColor,
+                            };
+                  const amt = Number(t?.amount ?? 0);
+                  return (
+                    <View key={t?._id ?? idx}>
+                      <View style={styles.txnRow}>
+                        <View
+                          style={[
+                            styles.txnIcon,
+                            { backgroundColor: `${iconCfg.color}15` },
+                          ]}
                         >
-                          {t?.service
-                            ? String(t.service).replace(/_/g, " ")
-                            : t?.description ?? "Transaction"}
-                        </Text>
+                          <Ionicons
+                            name={iconCfg.name}
+                            size={16}
+                            color={iconCfg.color}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={[styles.menuLabel, { color: colors.text }]}
+                            numberOfLines={1}
+                          >
+                            {t?.service
+                              ? String(t.service).replace(/_/g, " ")
+                              : (t?.description ?? "Transaction")}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.menuSubLabel,
+                              { color: colors.textSecondary },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {t?.createdAt
+                              ? new Date(t.createdAt).toLocaleDateString(
+                                  "en-IN",
+                                  {
+                                    day: "2-digit",
+                                    month: "short",
+                                  },
+                                )
+                              : ""}
+                            {t?.txnId ? ` · ${String(t.txnId).slice(-6)}` : ""}
+                          </Text>
+                        </View>
                         <Text
                           style={[
-                            styles.menuSubLabel,
-                            { color: colors.textSecondary },
+                            styles.txnAmount,
+                            {
+                              color:
+                                status === "SUCCESS"
+                                  ? successColor
+                                  : colors.text,
+                            },
                           ]}
-                          numberOfLines={1}
                         >
-                          {t?.createdAt
-                            ? new Date(t.createdAt).toLocaleDateString("en-IN", {
-                                day: "2-digit",
-                                month: "short",
-                              })
-                            : ""}
-                          {t?.txnId ? ` · ${String(t.txnId).slice(-6)}` : ""}
+                          {formatCurrency(amt)}
                         </Text>
                       </View>
-                      <Text
-                        style={[
-                          styles.txnAmount,
-                          {
-                            color:
-                              status === "SUCCESS"
-                                ? successColor
-                                : colors.text,
-                          },
-                        ]}
-                      >
-                        {formatCurrency(amt)}
-                      </Text>
+                      {idx !==
+                        Math.min(4, data.recentTransactions.length - 1) && (
+                        <View
+                          style={[
+                            styles.divider,
+                            { backgroundColor: borderColor },
+                          ]}
+                        />
+                      )}
                     </View>
-                    {idx !==
-                      Math.min(4, data.recentTransactions.length - 1) && (
-                      <View
-                        style={[
-                          styles.divider,
-                          { backgroundColor: borderColor },
-                        ]}
-                      />
-                    )}
-                  </View>
-                );
-              })}
+                  );
+                })}
             </View>
           </Section>
         )}
@@ -830,7 +845,9 @@ const DashboardScreen = () => {
                 colors={colors}
                 brandPrimary={brandPrimary}
               />
-              <View style={[styles.divider, { backgroundColor: borderColor }]} />
+              <View
+                style={[styles.divider, { backgroundColor: borderColor }]}
+              />
               <EarningRow
                 label="Surcharge"
                 value={data.earnings.surcharge}
@@ -842,7 +859,9 @@ const DashboardScreen = () => {
                 colors={colors}
                 brandPrimary={brandPrimary}
               />
-              <View style={[styles.divider, { backgroundColor: borderColor }]} />
+              <View
+                style={[styles.divider, { backgroundColor: borderColor }]}
+              />
               <EarningRow
                 label="GST"
                 value={data.earnings.gst}
@@ -854,7 +873,9 @@ const DashboardScreen = () => {
                 colors={colors}
                 brandPrimary={brandPrimary}
               />
-              <View style={[styles.divider, { backgroundColor: borderColor }]} />
+              <View
+                style={[styles.divider, { backgroundColor: borderColor }]}
+              />
               <EarningRow
                 label="TDS"
                 value={data.earnings.tds}
@@ -866,7 +887,9 @@ const DashboardScreen = () => {
                 colors={colors}
                 brandPrimary={brandPrimary}
               />
-              <View style={[styles.divider, { backgroundColor: borderColor }]} />
+              <View
+                style={[styles.divider, { backgroundColor: borderColor }]}
+              />
               <EarningRow
                 label="Net Earnings"
                 value={data.earnings.net}
@@ -1181,9 +1204,7 @@ const AlertBanner = ({
           },
         ]}
       >
-        <View
-          style={[styles.alertIcon, { backgroundColor: `${accent}20` }]}
-        >
+        <View style={[styles.alertIcon, { backgroundColor: `${accent}20` }]}>
           <Ionicons name={icon} size={16} color={accent} />
         </View>
         <View style={{ flex: 1 }}>
@@ -1349,20 +1370,21 @@ const EarningRow = ({
   const safeValue = Number(value ?? 0);
   const safeTotal = Number(total ?? 0);
   const pct =
-    safeTotal > 0 ? Math.min(100, Math.round((safeValue / safeTotal) * 100)) : 0;
+    safeTotal > 0
+      ? Math.min(100, Math.round((safeValue / safeTotal) * 100))
+      : 0;
 
   // IMPORTANT: keep these as booleans so a `0` value never renders as a
   // raw text child inside a <View> (which causes the RN runtime error
   // "Text strings must be rendered within a <Text> component").
   const showPct = !isTotal && safeTotal > 0;
-  const showBar = !isTotal && typeof brandPrimary === "string" && brandPrimary.length > 0;
+  const showBar =
+    !isTotal && typeof brandPrimary === "string" && brandPrimary.length > 0;
 
   return (
     <View style={styles.earningRow}>
       <View style={{ flex: 1 }}>
-        <View
-          style={{ flexDirection: "row", justifyContent: "space-between" }}
-        >
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <Text
             style={[
               styles.menuLabel,

@@ -70,6 +70,20 @@ type CommissionRule = {
   [key: string]: any;
 };
 
+type PermissionEntry = {
+  id?: string;
+  resource: string;
+  action: string;
+  source?: string;
+  effect?: string;
+};
+
+type PermissionsPayload = {
+  isSuperAdmin?: boolean;
+  role?: PermissionEntry[];
+  user?: PermissionEntry[];
+};
+
 type ScopeFilter = "ALL" | "ROLE" | "USER" | "GLOBAL";
 type StatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
 
@@ -166,6 +180,44 @@ const CommissionRulesScreen = () => {
   );
   const loading = laoding;
 
+  /* ===== Permissions ===== */
+  const { user: authUser } = useSelector((state: any) => state?.auth);
+
+  const permissionsPayload: PermissionsPayload | undefined =
+    authUser?.permissions ?? authUser?.data?.permissions;
+
+  const isSuperAdmin = permissionsPayload?.isSuperAdmin === true;
+  const userPermissions: PermissionEntry[] = permissionsPayload?.user ?? [];
+
+  const permissionSet = useMemo(() => {
+    return new Set(
+      userPermissions
+        .filter(
+          (p) =>
+            p &&
+            typeof p.resource === "string" &&
+            typeof p.action === "string" &&
+            (p.effect == null || p.effect === "ALLOW"),
+        )
+        .map((p) => `${p.resource.trim()}:${p.action.trim()}`),
+    );
+  }, [userPermissions]);
+
+  const can = useCallback(
+    (resource: string, action: string) => {
+      if (isSuperAdmin) return true;
+      return permissionSet.has(`${resource}:${action}`);
+    },
+    [permissionSet, isSuperAdmin],
+  );
+
+  // Commission action permissions
+  const canReadCommission = can("COMMISSION", "READ");
+  const canSetRule = can("COMMISSION", "SET_RULE");
+
+  // Toggling active is typically driven by SET_RULE or UPDATE — allow either
+  const canToggleActive = canSetRule;
+
   const [rules, setRules] = useState<CommissionRule[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -223,6 +275,8 @@ const CommissionRulesScreen = () => {
   /* -------- Fetch first page on filter/search change -------- */
 
   useEffect(() => {
+    if (!canReadCommission) return;
+
     appendedPagesRef.current = new Set([1]);
     currentPageRef.current = 1;
     setHasMore(true);
@@ -240,7 +294,7 @@ const CommissionRulesScreen = () => {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [scope, statusFilter, search, buildPayload, dispatch]);
+  }, [scope, statusFilter, search, buildPayload, dispatch, canReadCommission]);
 
   /* -------- Sync redux → local -------- */
 
@@ -265,6 +319,7 @@ const CommissionRulesScreen = () => {
 
   const loadMore = useCallback(async () => {
     if (
+      !canReadCommission ||
       !hasMore ||
       loading ||
       loadingMore ||
@@ -288,6 +343,7 @@ const CommissionRulesScreen = () => {
       isFetchingRef.current = false;
     }
   }, [
+    canReadCommission,
     hasMore,
     loading,
     loadingMore,
@@ -297,6 +353,7 @@ const CommissionRulesScreen = () => {
   ]);
 
   const onRefresh = async () => {
+    if (!canReadCommission) return;
     setRefreshing(true);
     appendedPagesRef.current = new Set([1]);
     currentPageRef.current = 1;
@@ -328,11 +385,14 @@ const CommissionRulesScreen = () => {
   }, [search, scope, statusFilter]);
 
   const openDetails = (rule: CommissionRule) => {
+    if (!canReadCommission) return;
     setSelectedRule(rule);
     setDetailsOpen(true);
   };
 
   const openMenu = (rule: CommissionRule) => {
+    // Only open the action sheet if there's at least one action available
+    if (!canSetRule && !canToggleActive) return;
     setMenuRule(rule);
     setMenuOpen(true);
   };
@@ -344,17 +404,16 @@ const CommissionRulesScreen = () => {
 
   /* --------- Open Edit modal --------- */
   const handleEdit = () => {
-    if (!menuRule) return;
+    if (!menuRule || !canSetRule) return;
     setEditRule(menuRule);
     closeMenu();
-    // Slight delay so the menu modal closes before the edit modal opens
     setTimeout(() => setEditOpen(true), 150);
   };
 
   /* --------- Toggle active (quick action) --------- */
 
   const handleToggleActive = async () => {
-    if (!menuRule) return;
+    if (!menuRule || !canToggleActive) return;
     const id = menuRule.id;
     const nextActive = !menuRule.isActive;
     closeMenu();
@@ -385,6 +444,9 @@ const CommissionRulesScreen = () => {
     const statusColor = isActive
       ? colors.success ?? "#10B981"
       : colors.error ?? "#EF4444";
+
+    // Show 3-dot menu only if at least one action is available
+    const showMenu = canSetRule || canToggleActive;
 
     return (
       <TouchableOpacity
@@ -471,27 +533,29 @@ const CommissionRulesScreen = () => {
           </Text>
         </View>
 
-        <TouchableOpacity
-          activeOpacity={0.6}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          onPress={(e) => {
-            e.stopPropagation?.();
-            openMenu(item);
-          }}
-          style={[
-            styles.menuBtn,
-            {
-              backgroundColor: colors.surfaceTertiary,
-              borderColor: colors.border,
-            },
-          ]}
-        >
-          <Ionicons
-            name="ellipsis-vertical"
-            size={16}
-            color={colors.textMuted}
-          />
-        </TouchableOpacity>
+        {showMenu && (
+          <TouchableOpacity
+            activeOpacity={0.6}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              openMenu(item);
+            }}
+            style={[
+              styles.menuBtn,
+              {
+                backgroundColor: colors.surfaceTertiary,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Ionicons
+              name="ellipsis-vertical"
+              size={16}
+              color={colors.textMuted}
+            />
+          </TouchableOpacity>
+        )}
       </TouchableOpacity>
     );
   };
@@ -510,14 +574,40 @@ const CommissionRulesScreen = () => {
 
   const showInitialLoader = loading && rules.length === 0;
 
+  /* ---------------- No permission → friendly "no access" view ---------------- */
+
+  if (!canReadCommission) {
+    return (
+      <LinearGradient
+        colors={[colors.backgroundTop, colors.backgroundBottom]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
+        <HeaderSection title="Commission Rules" />
+        <View style={styles.center}>
+          <Ionicons
+            name="lock-closed-outline"
+            size={48}
+            color={colors.textMuted}
+          />
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+            You don't have permission to view commission rules.
+          </Text>
+        </View>
+      </LinearGradient>
+    );
+  }
+
   /* --------------------------- Render --------------------------- */
 
   return (
     <LinearGradient
-      colors={[colors.backgroundTop , colors.backgroundBottom]}
+      colors={[colors.backgroundTop, colors.backgroundBottom]}
       start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }} 
-       style={[styles.container, { backgroundColor: colors.background }]}>
+      end={{ x: 1, y: 1 }}
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <HeaderSection title="Commission Rules" />
 
       <View style={styles.headerBar}>
@@ -735,40 +825,46 @@ const CommissionRulesScreen = () => {
         />
       )}
 
-      {/* FAB */}
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => setAddVisible(true)}
-        style={[
-          styles.fab,
-          {
-            backgroundColor: colors.buttonPrimary,
-            bottom: insets.bottom + 24,
-          },
-        ]}
-      >
-        <Ionicons name="add" size={26} color="#FFFFFF" />
-      </TouchableOpacity>
+      {/* FAB — only with COMMISSION:CREATE or SET_RULE */}
+      {canSetRule && (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setAddVisible(true)}
+          style={[
+            styles.fab,
+            {
+              backgroundColor: colors.buttonPrimary,
+              bottom: insets.bottom + 24,
+            },
+          ]}
+        >
+          <Ionicons name="add" size={26} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
 
       {/* Create Modal */}
-      <CreateCommisonRuleModal
-        visible={addVisible}
-        onClose={() => setAddVisible(false)}
-        onSuccess={onRefresh}
-      />
+      {canSetRule && (
+        <CreateCommisonRuleModal
+          visible={addVisible}
+          onClose={() => setAddVisible(false)}
+          onSuccess={onRefresh}
+        />
+      )}
 
       {/* Edit Modal */}
-      <EditCommissionRuleModal
-        visible={editOpen}
-        rule={editRule}
-        onClose={() => {
-          setEditOpen(false);
-          setEditRule(null);
-        }}
-        onSuccess={onRefresh}
-      />
+      {canSetRule && (
+        <EditCommissionRuleModal
+          visible={editOpen}
+          rule={editRule}
+          onClose={() => {
+            setEditOpen(false);
+            setEditRule(null);
+          }}
+          onSuccess={onRefresh}
+        />
+      )}
 
-      {/* View Details Modal */}
+      {/* View Details Modal — needs READ */}
       <ViewCommissionRuleModal
         visible={detailsOpen}
         rule={selectedRule}
@@ -778,124 +874,136 @@ const CommissionRulesScreen = () => {
         }}
       />
 
-      {/* 3-dot Action Menu */}
-      <Modal
-        visible={menuOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={closeMenu}
-      >
-        <TouchableOpacity
-          activeOpacity={1}
-          style={styles.menuBackdrop}
-          onPress={closeMenu}
+      {/* 3-dot Action Menu — only if there's at least one action */}
+      {(canSetRule || canToggleActive) && (
+        <Modal
+          visible={menuOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={closeMenu}
         >
-          <View
-            style={[
-              styles.menuSheet,
-              {
-                backgroundColor: colors.background,
-                borderColor: colors.border,
-              },
-            ]}
+          <TouchableOpacity
+            activeOpacity={1}
+            style={styles.menuBackdrop}
+            onPress={closeMenu}
           >
             <View
-              style={[styles.menuHeader, { borderBottomColor: colors.border }]}
+              style={[
+                styles.menuSheet,
+                {
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                },
+              ]}
             >
-              <Text style={[styles.menuTitle, { color: colors.text }]}>
-                Actions
-              </Text>
-              <Text
-                style={[styles.menuSub, { color: colors.textMuted }]}
-                numberOfLines={1}
+              <View
+                style={[
+                  styles.menuHeader,
+                  { borderBottomColor: colors.border },
+                ]}
               >
-                {menuRule ? getTargetLabel(menuRule) : ""}
-              </Text>
+                <Text style={[styles.menuTitle, { color: colors.text }]}>
+                  Actions
+                </Text>
+                <Text
+                  style={[styles.menuSub, { color: colors.textMuted }]}
+                  numberOfLines={1}
+                >
+                  {menuRule ? getTargetLabel(menuRule) : ""}
+                </Text>
+              </View>
+
+              {/* Edit */}
+              {canSetRule && (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={handleEdit}
+                  disabled={actionLoading}
+                  style={styles.menuItem}
+                >
+                  <View
+                    style={[
+                      styles.menuIconWrap,
+                      {
+                        backgroundColor:
+                          (colors.buttonPrimary ?? "#2563EB") + "20",
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="create-outline"
+                      size={18}
+                      color={colors.buttonPrimary}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.menuItemText, { color: colors.text }]}>
+                      Edit
+                    </Text>
+                    <Text
+                      style={[styles.menuItemSub, { color: colors.textMuted }]}
+                    >
+                      Modify value, slabs, taxes…
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {/* Toggle active */}
+              {canToggleActive && (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={handleToggleActive}
+                  disabled={actionLoading}
+                  style={styles.menuItem}
+                >
+                  <View
+                    style={[
+                      styles.menuIconWrap,
+                      {
+                        backgroundColor: menuRule?.isActive
+                          ? "#EF444420"
+                          : "#10B98120",
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name={
+                        menuRule?.isActive
+                          ? "close-circle-outline"
+                          : "checkmark-circle-outline"
+                      }
+                      size={18}
+                      color={menuRule?.isActive ? "#EF4444" : "#10B981"}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.menuItemText, { color: colors.text }]}>
+                      {menuRule?.isActive ? "Deactivate" : "Activate"}
+                    </Text>
+                    <Text
+                      style={[styles.menuItemSub, { color: colors.textMuted }]}
+                    >
+                      {menuRule?.isActive
+                        ? "Stop applying this rule"
+                        : "Enable this rule"}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                onPress={closeMenu}
+                style={[styles.menuCancel, { borderTopColor: colors.border }]}
+              >
+                <Text style={[styles.menuCancelText, { color: colors.text }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
             </View>
-
-            {/* Edit */}
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handleEdit}
-              disabled={actionLoading}
-              style={styles.menuItem}
-            >
-              <View
-                style={[
-                  styles.menuIconWrap,
-                  { backgroundColor: (colors.buttonPrimary ?? "#2563EB") + "20" },
-                ]}
-              >
-                <Ionicons
-                  name="create-outline"
-                  size={18}
-                  color={colors.buttonPrimary}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.menuItemText, { color: colors.text }]}>
-                  Edit
-                </Text>
-                <Text
-                  style={[styles.menuItemSub, { color: colors.textMuted }]}
-                >
-                  Modify value, slabs, taxes…
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Toggle active */}
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={handleToggleActive}
-              disabled={actionLoading}
-              style={styles.menuItem}
-            >
-              <View
-                style={[
-                  styles.menuIconWrap,
-                  {
-                    backgroundColor: menuRule?.isActive
-                      ? "#EF444420"
-                      : "#10B98120",
-                  },
-                ]}
-              >
-                <Ionicons
-                  name={
-                    menuRule?.isActive
-                      ? "close-circle-outline"
-                      : "checkmark-circle-outline"
-                  }
-                  size={18}
-                  color={menuRule?.isActive ? "#EF4444" : "#10B981"}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.menuItemText, { color: colors.text }]}>
-                  {menuRule?.isActive ? "Deactivate" : "Activate"}
-                </Text>
-                <Text
-                  style={[styles.menuItemSub, { color: colors.textMuted }]}
-                >
-                  {menuRule?.isActive
-                    ? "Stop applying this rule"
-                    : "Enable this rule"}
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={closeMenu}
-              style={[styles.menuCancel, { borderTopColor: colors.border }]}
-            >
-              <Text style={[styles.menuCancelText, { color: colors.text }]}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </LinearGradient>
   );
 };
@@ -977,9 +1085,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 60,
+    paddingHorizontal: 24,
     gap: 10,
   },
-  emptyText: { fontSize: 13.5, fontWeight: "600" },
+  emptyText: {
+    fontSize: 13.5,
+    fontWeight: "600",
+    textAlign: "center",
+  },
 
   card: {
     flexDirection: "row",

@@ -7,7 +7,7 @@ import { getEmployeesListApiCall } from "@/redux/slices/employeeManagementSlice"
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -22,6 +22,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDispatch, useSelector } from "react-redux";
 
+/* ---------------- Types ---------------- */
 export type Employee = {
   id: string;
   firstName: string;
@@ -37,6 +38,20 @@ export type Employee = {
 };
 
 type StatusFilter = "ALL" | "ACTIVE" | "INACTIVE";
+
+type PermissionEntry = {
+  id?: string;
+  resource: string;
+  action: string;
+  source?: string;
+  effect?: string;
+};
+
+type PermissionsPayload = {
+  isSuperAdmin?: boolean;
+  role?: PermissionEntry[];
+  user?: PermissionEntry[];
+};
 
 const PAGE_SIZE = 10;
 
@@ -54,7 +69,44 @@ const EmployeesScreen = () => {
   const colors = Colors[isDark ? "dark" : "light"];
   const insets = useSafeAreaInsets();
 
-  // Raw employees from redux (this gets replaced on every fetch)
+  // ===== Auth: permissions =====
+  const { user: authUser } = useSelector((state: any) => state.auth);
+
+  const permissionsPayload: PermissionsPayload | undefined =
+    authUser?.permissions ?? authUser?.data?.permissions;
+
+  const isSuperAdmin = permissionsPayload?.isSuperAdmin === true;
+  const userPermissions: PermissionEntry[] = permissionsPayload?.user ?? [];
+
+  const permissionSet = useMemo(() => {
+    return new Set(
+      userPermissions
+        .filter(
+          (p) =>
+            p &&
+            typeof p.resource === "string" &&
+            typeof p.action === "string" &&
+            (p.effect == null || p.effect === "ALLOW")
+        )
+        .map((p) => `${p.resource.trim()}:${p.action.trim()}`)
+    );
+  }, [userPermissions]);
+
+  const can = useCallback(
+    (resource: string, action: string) => {
+      if (isSuperAdmin) return true;
+      return permissionSet.has(`${resource}:${action}`);
+    },
+    [permissionSet, isSuperAdmin]
+  );
+
+  // Button-level permissions
+  const canCreateEmployee = can("EMPLOYEE", "CREATE");
+  const canUpdateEmployee = can("EMPLOYEE", "UPDATE");
+  const canAssignEmployeePermissions = can("EMPLOYEE", "ASSIGN_PERMISSIONS");
+  const canChangeStatus = can("EMPLOYEE", "CHANGE_STATUS");
+
+  // ===== Employees list =====
   const employeesRaw = useSelector(
     (state: any) => state.employees?.emplyeeData,
   );
@@ -63,7 +115,6 @@ const EmployeesScreen = () => {
     : [];
   const loading = useSelector((state: any) => state.employees?.loading);
 
-  // Local accumulated list (used for infinite scroll)
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -101,7 +152,6 @@ const EmployeesScreen = () => {
 
   // ----- Fetch first page whenever filters change -----
   useEffect(() => {
-    // Filters changed → reset everything
     appendedPagesRef.current = new Set([1]);
     currentPageRef.current = 1;
     setPage(1);
@@ -112,7 +162,6 @@ const EmployeesScreen = () => {
       if (isFetchingRef.current) return;
       isFetchingRef.current = true;
       try {
-        // Clear current list so old data doesn't linger while fetching
         setAllEmployees([]);
         await getEmployeesListApiCall(buildPayload(1), dispatch);
       } finally {
@@ -129,11 +178,9 @@ const EmployeesScreen = () => {
     const currentPage = currentPageRef.current;
 
     if (currentPage === 1) {
-      // First page → replace local list
       setAllEmployees(apiEmployees);
       setHasMore(apiEmployees.length >= PAGE_SIZE);
     } else {
-      // Next page → append (dedupe by id)
       setAllEmployees((prev) => {
         const existingIds = new Set(prev.map((u) => u.id));
         const fresh = apiEmployees.filter((u) => !existingIds.has(u.id));
@@ -197,11 +244,13 @@ const EmployeesScreen = () => {
   }, [search, statusFilter, fromDate, toDate]);
 
   const handleEdit = (emp: Employee) => {
+    if (!canUpdateEmployee) return;
     setSelected(emp);
     setEditVisible(true);
   };
 
   const handlePermissions = (emp: Employee) => {
+    if (!canAssignEmployeePermissions) return;
     setSelected(emp);
     setPermVisible(true);
   };
@@ -247,12 +296,11 @@ const EmployeesScreen = () => {
       item.lastName?.[0] ?? ""
     }`.toUpperCase();
 
-    const status = (
-      item.employeeStatus ??
-      item.status ??
-      "ACTIVE"
-    ).toUpperCase();
+    const status = (item.employeeStatus ?? item.status ?? "ACTIVE").toUpperCase();
     const isActive = status === "ACTIVE";
+
+    // Show action row only if at least one action is allowed
+    const showActionRow = canUpdateEmployee || canAssignEmployeePermissions;
 
     return (
       <View
@@ -309,41 +357,52 @@ const EmployeesScreen = () => {
           </View>
         </View>
 
-        <View style={[styles.actionRow, { borderTopColor: colors.border }]}>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            activeOpacity={0.7}
-            onPress={() => handlePermissions(item)}
-          >
-            <Ionicons
-              name="key-outline"
-              size={16}
-              color={colors.buttonPrimary}
-            />
-            <Text style={[styles.actionText, { color: colors.text }]}>
-              Permissions
-            </Text>
-          </TouchableOpacity>
+        {showActionRow && (
+          <View style={[styles.actionRow, { borderTopColor: colors.border }]}>
+            {canAssignEmployeePermissions && (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.7}
+                onPress={() => handlePermissions(item)}
+              >
+                <Ionicons
+                  name="key-outline"
+                  size={16}
+                  color={colors.buttonPrimary}
+                />
+                <Text style={[styles.actionText, { color: colors.text }]}>
+                  Permissions
+                </Text>
+              </TouchableOpacity>
+            )}
 
-          <View
-            style={[styles.verticalDivider, { backgroundColor: colors.border }]}
-          />
+            {canAssignEmployeePermissions && canUpdateEmployee && (
+              <View
+                style={[
+                  styles.verticalDivider,
+                  { backgroundColor: colors.border },
+                ]}
+              />
+            )}
 
-          <TouchableOpacity
-            style={styles.actionBtn}
-            activeOpacity={0.7}
-            onPress={() => handleEdit(item)}
-          >
-            <Ionicons
-              name="create-outline"
-              size={16}
-              color={colors.buttonPrimary}
-            />
-            <Text style={[styles.actionText, { color: colors.text }]}>
-              Edit
-            </Text>
-          </TouchableOpacity>
-        </View>
+            {canUpdateEmployee && (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.7}
+                onPress={() => handleEdit(item)}
+              >
+                <Ionicons
+                  name="create-outline"
+                  size={16}
+                  color={colors.buttonPrimary}
+                />
+                <Text style={[styles.actionText, { color: colors.text }]}>
+                  Edit
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
     );
   };
@@ -364,10 +423,11 @@ const EmployeesScreen = () => {
 
   return (
     <LinearGradient
-      colors={[colors.backgroundTop , colors.backgroundBottom]}
+      colors={[colors.backgroundTop, colors.backgroundBottom]}
       start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }} 
-       style={[styles.container, { backgroundColor: colors.background }]}>
+      end={{ x: 1, y: 1 }}
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <HeaderSection title="Employees" />
 
       {/* Filter Bar */}
@@ -375,7 +435,7 @@ const EmployeesScreen = () => {
         style={[
           styles.filterBar,
           {
-            backgroundColor: colors.background,
+            backgroundColor: colors.card,
             borderBottomColor: colors.border,
           },
         ]}
@@ -432,7 +492,6 @@ const EmployeesScreen = () => {
         {/* Filter panel */}
         {showFilters && (
           <>
-            {/* Status chips */}
             <View style={styles.chipRow}>
               {statusFilters.map((s) => {
                 const active = statusFilter === s;
@@ -466,7 +525,6 @@ const EmployeesScreen = () => {
               })}
             </View>
 
-            {/* Date range */}
             <View style={styles.dateRow}>
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -539,7 +597,6 @@ const EmployeesScreen = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Clear filters */}
             {hasActiveFilters && (
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -559,7 +616,6 @@ const EmployeesScreen = () => {
           </>
         )}
 
-        {/* Date pickers */}
         {showFromPicker && (
           <DateTimePicker
             value={fromDate ?? new Date()}
@@ -618,43 +674,55 @@ const EmployeesScreen = () => {
         />
       )}
 
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => setAddVisible(true)}
-        style={[
-          styles.fab,
-          {
-            backgroundColor: colors.buttonPrimary,
-            bottom: insets.bottom + 24,
-          },
-        ]}
-      >
-        <Ionicons name="add" size={26} color="#FFFFFF" />
-      </TouchableOpacity>
+      {/* FAB — only with EMPLOYEE:CREATE */}
+      {canCreateEmployee && (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setAddVisible(true)}
+          style={[
+            styles.fab,
+            {
+              backgroundColor: colors.buttonPrimary,
+              bottom: insets.bottom + 24,
+            },
+          ]}
+        >
+          <Ionicons name="add" size={26} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
 
-      <AddEmployeeModal
-        visible={addVisible}
-        onClose={() => setAddVisible(false)}
-        onSuccess={refreshFirstPage}
-      />
-      <EditEmployeeModal
-        visible={editVisible}
-        employee={selected}
-        onClose={() => {
-          setEditVisible(false);
-          setSelected(null);
-        }}
-        onSuccess={refreshFirstPage}
-      />
-      <EmployeePermissionModal
-        visible={permVisible}
-        employee={selected}
-        onClose={() => {
-          setPermVisible(false);
-          setSelected(null);
-        }}
-        onSuccess={refreshFirstPage}
-      />
+      {/* Modals — only mount when permitted */}
+      {canCreateEmployee && (
+        <AddEmployeeModal
+          visible={addVisible}
+          onClose={() => setAddVisible(false)}
+          onSuccess={refreshFirstPage}
+        />
+      )}
+
+      {canUpdateEmployee && (
+        <EditEmployeeModal
+          visible={editVisible}
+          employee={selected}
+          onClose={() => {
+            setEditVisible(false);
+            setSelected(null);
+          }}
+          onSuccess={refreshFirstPage}
+        />
+      )}
+
+      {canAssignEmployeePermissions && (
+        <EmployeePermissionModal
+          visible={permVisible}
+          employee={selected}
+          onClose={() => {
+            setPermVisible(false);
+            setSelected(null);
+          }}
+          onSuccess={refreshFirstPage}
+        />
+      )}
     </LinearGradient>
   );
 };
@@ -671,7 +739,6 @@ const styles = StyleSheet.create({
   },
   emptyText: { fontSize: 13, fontWeight: "500" },
 
-  // Filter bar
   filterBar: {
     paddingHorizontal: 16,
     paddingTop: 4,
@@ -724,7 +791,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  // Date filters
   dateRow: {
     flexDirection: "row",
     gap: 10,
@@ -799,7 +865,6 @@ const styles = StyleSheet.create({
   actionText: { fontSize: 12.5, fontWeight: "600" },
   verticalDivider: { width: StyleSheet.hairlineWidth, height: 20 },
 
-  // Footer loader
   footerLoader: {
     paddingVertical: 20,
     alignItems: "center",

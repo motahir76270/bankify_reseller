@@ -92,7 +92,7 @@ const DomainScreen = () => {
        start={{ x: 0, y: 0 }}
        end={{ x: 1, y: 1 }} 
        style={[styles.container, { backgroundColor: colors.background }]}>
-      <HeaderSection title="Domain Manage" />
+      <HeaderSection title="Domain" />
 
       <ScrollView
         contentContainerStyle={{

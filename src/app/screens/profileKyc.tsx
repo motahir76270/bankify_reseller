@@ -1,44 +1,47 @@
 // ProfileKycScreen.tsx
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { zodResolver } from "@hookform/resolvers/zod";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import { useRouter } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   useColorScheme,
-  ActivityIndicator,
-  StatusBar,
-  Modal,
-  FlatList,
-  Alert,
-} from 'react-native';
-import { Controller, useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useRouter } from 'expo-router';
-import { useDispatch, useSelector } from 'react-redux';
-import z from 'zod';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
-import * as DocumentPicker from 'expo-document-picker';
+  View,
+} from "react-native";
+import { useDispatch, useSelector } from "react-redux";
+import z from "zod";
 
-import { Colors } from '@/constants/theme';
-import HeaderSection from '@/components/ui/headerSections';
-import KycValidation from '@/validations/profileKyc';
+import DigilockerPage from "@/components/screens/digilocker";
+import { showError } from "@/components/service/AlertService";
+import HeaderSection from "@/components/ui/headerSections";
+import { Colors } from "@/constants/theme";
 import {
   getAllCitiesApiCall,
   getAllStatesApiCall,
   kycSubmitApiCall,
-} from '@/redux/slices/profileKycSlice';
+} from "@/redux/slices/profileKycSlice";
 import {
   getServiceMapingIdDataApiCall,
   verifyPanApiCall,
-} from '@/redux/slices/serviceSlice';
-import { showError } from '@/components/service/AlertService';
+} from "@/redux/slices/serviceSlice";
+import KycValidation from "@/validations/profileKyc";
 
 /* ----------------- types ----------------- */
 
@@ -46,11 +49,11 @@ type ProfileKycFormValues = z.infer<typeof KycValidation.profileKYC>;
 type FieldName = keyof ProfileKycFormValues;
 
 export type DocumentType =
-  | 'PAN'
-  | 'AADHAAR_FRONT'
-  | 'AADHAAR_BACK'
-  | 'ADDRESS_PROOF'
-  | 'USER_PHOTO';
+  | "PAN"
+  | "AADHAAR_FRONT"
+  | "AADHAAR_BACK"
+  | "ADDRESS_PROOF"
+  | "USER_PHOTO";
 
 type Props = {
   onSubmit?: (formData: FormData) => Promise<void> | void;
@@ -63,8 +66,8 @@ type CityItem = { id: string; cityName: string; cityCode: string };
 type FieldMeta = {
   label: string;
   placeholder?: string;
-  keyboardType?: 'default' | 'numeric';
-  autoCapitalize?: 'none' | 'characters' | 'words' | 'sentences';
+  keyboardType?: "default" | "numeric";
+  autoCapitalize?: "none" | "characters" | "words" | "sentences";
   options?: readonly string[];
   isDocument?: boolean;
 };
@@ -72,93 +75,98 @@ type FieldMeta = {
 /* ----------------- steps ----------------- */
 
 const STEPS: { title: string; fields: FieldName[] }[] = [
-  { title: 'Identity', fields: ['pan', 'aadhaar'] },
+  { title: "Identity", fields: ["pan", "aadhaar"] },
   {
-    title: 'Personal Details',
-    fields: ['first_name', 'last_name', 'father_name', 'dob', 'gender'],
+    title: "Personal Details",
+    fields: ["first_name", "last_name", "father_name", "dob", "gender"],
   },
-  { title: 'Address', fields: ['state', 'city', 'address', 'pinCode'] },
+  { title: "Address", fields: ["state", "city", "address", "pinCode"] },
   {
-    title: 'Documents',
+    title: "Documents",
     fields: [
-      'pan_document',
-      'aadhaar_front_doc',
-      'aadhaar_back_doc',
-      'address_proof_doc',
-      'user_photo_doc',
+      "pan_document",
+      "aadhaar_front_doc",
+      "aadhaar_back_doc",
+      "address_proof_doc",
+      "user_photo_doc",
     ],
   },
 ];
 
-const GENDER_OPTIONS = ['male', 'female', 'other'] as const;
+const GENDER_OPTIONS = ["male", "female", "other"] as const;
 
 const DOC_FIELD_MAP: Record<
-  | 'pan_document'
-  | 'aadhaar_front_doc'
-  | 'aadhaar_back_doc'
-  | 'address_proof_doc'
-  | 'user_photo_doc',
-  { type: DocumentType; label: string; numberFrom?: FieldName; fallback: string }
+  | "pan_document"
+  | "aadhaar_front_doc"
+  | "aadhaar_back_doc"
+  | "address_proof_doc"
+  | "user_photo_doc",
+  {
+    type: DocumentType;
+    label: string;
+    numberFrom?: FieldName;
+    fallback: string;
+  }
 > = {
   pan_document: {
-    type: 'PAN',
-    label: 'PAN Document',
-    numberFrom: 'pan',
-    fallback: '',
+    type: "PAN",
+    label: "PAN Document",
+    numberFrom: "pan",
+    fallback: "",
   },
   aadhaar_front_doc: {
-    type: 'AADHAAR_FRONT',
-    label: 'Aadhaar Front',
-    numberFrom: 'aadhaar',
-    fallback: '',
+    type: "AADHAAR_FRONT",
+    label: "Aadhaar Front",
+    numberFrom: "aadhaar",
+    fallback: "",
   },
   aadhaar_back_doc: {
-    type: 'AADHAAR_BACK',
-    label: 'Aadhaar Back',
-    numberFrom: 'aadhaar',
-    fallback: '',
+    type: "AADHAAR_BACK",
+    label: "Aadhaar Back",
+    numberFrom: "aadhaar",
+    fallback: "",
   },
   address_proof_doc: {
-    type: 'ADDRESS_PROOF',
-    label: 'Address Proof',
-    fallback: 'ADDRESS_PROOF',
+    type: "ADDRESS_PROOF",
+    label: "Address Proof",
+    fallback: "ADDRESS_PROOF",
   },
   user_photo_doc: {
-    type: 'USER_PHOTO',
-    label: 'User Photo',
-    fallback: 'USER_PHOTO',
+    type: "USER_PHOTO",
+    label: "User Photo",
+    fallback: "USER_PHOTO",
   },
 };
 
 const FIELD_META: Record<FieldName, FieldMeta> = {
-  first_name: { label: 'First Name', autoCapitalize: 'words' },
-  last_name: { label: 'Last Name', autoCapitalize: 'words' },
-  father_name: { label: "Father's Name", autoCapitalize: 'words' },
-  dob: { label: 'Date of Birth', placeholder: 'DD/MM/YYYY' },
-  gender: { label: 'Gender', options: GENDER_OPTIONS },
+  first_name: { label: "First Name", autoCapitalize: "words" },
+  last_name: { label: "Last Name", autoCapitalize: "words" },
+  father_name: { label: "Father's Name", autoCapitalize: "words" },
+  dob: { label: "Date of Birth", placeholder: "DD/MM/YYYY" },
+  gender: { label: "Gender", options: GENDER_OPTIONS },
   pan: {
-    label: 'PAN',
-    placeholder: 'ABCDE1234F',
-    autoCapitalize: 'characters',
+    label: "PAN",
+    placeholder: "ABCDE1234F",
+    autoCapitalize: "characters",
   },
   aadhaar: {
-    label: 'Aadhaar',
-    placeholder: '12 digits',
-    keyboardType: 'numeric',
+    label: "Aadhaar",
+    placeholder: "12 digits",
+    keyboardType: "numeric",
   },
-  address: { label: 'Address', autoCapitalize: 'words' },
-  city: { label: 'City', autoCapitalize: 'words' },
-  state: { label: 'State', autoCapitalize: 'words' },
+  address: { label: "Address", autoCapitalize: "words" },
+  city: { label: "City", autoCapitalize: "words" },
+  state: { label: "State", autoCapitalize: "words" },
   pinCode: {
-    label: 'PIN Code',
-    placeholder: '6 digits',
-    keyboardType: 'numeric',
+    label: "PIN Code",
+    placeholder: "6 digits",
+    keyboardType: "numeric",
   },
-  pan_document: { label: 'PAN Document', isDocument: true },
-  aadhaar_front_doc: { label: 'Aadhaar Front', isDocument: true },
-  aadhaar_back_doc: { label: 'Aadhaar Back', isDocument: true },
-  address_proof_doc: { label: 'Address Proof', isDocument: true },
-  user_photo_doc: { label: 'User Photo', isDocument: true },
+  pan_document: { label: "PAN Document", isDocument: true },
+  aadhaar_front_doc: { label: "Aadhaar Front", isDocument: true },
+  aadhaar_back_doc: { label: "Aadhaar Back", isDocument: true },
+  address_proof_doc: { label: "Address Proof", isDocument: true },
+  user_photo_doc: { label: "User Photo", isDocument: true },
 };
 
 const MAX_FILE_SIZE_MB = 5;
@@ -175,13 +183,13 @@ const parseISO = (s?: string): Date | null => {
 };
 const toISO = (d: Date): string => {
   const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 };
 const toDisplay = (d: Date): string => {
-  const day = String(d.getDate()).padStart(2, '0');
-  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, "0");
+  const m = String(d.getMonth() + 1).padStart(2, "0");
   return `${day}/${m}/${d.getFullYear()}`;
 };
 
@@ -192,17 +200,136 @@ const isRemoteUri = (uri?: string): boolean =>
 
 const inferMimeType = (name: string): string => {
   const lower = name.toLowerCase();
-  if (lower.endsWith('.pdf')) return 'application/pdf';
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.webp')) return 'image/webp';
-  if (lower.endsWith('.heic')) return 'image/heic';
-  return 'image/jpeg';
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".heic")) return "image/heic";
+  return "image/jpeg";
 };
 
 const safeFileName = (uri: string, fallback: string): string => {
-  const raw = uri.split('/').pop()?.split('?')[0];
+  const raw = uri.split("/").pop()?.split("?")[0];
   if (!raw) return fallback;
   return raw;
+};
+
+/** Normalize PAN API values — converts "NULL", null, undefined, "" into "" */
+const clean = (v: unknown): string => {
+  if (v == null) return "";
+  const s = String(v).trim();
+  if (!s || s.toUpperCase() === "NULL" || s.toUpperCase() === "NA")
+    return "";
+  return s;
+};
+
+/**
+ * Writes a base64 JPEG to the app cache directory and returns the file URI.
+ * Returns "" on failure so the caller can gracefully skip.
+ */
+const writeBase64PhotoToFile = async (
+  base64: string,
+  fileName = `digilocker_photo_${Date.now()}.jpg`,
+): Promise<string> => {
+  try {
+    if (!base64) return "";
+    const dir = `${FileSystem.cacheDirectory}kyc/`;
+    const dirInfo = await FileSystem.getInfoAsync(dir);
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+    }
+    const fileUri = `${dir}${fileName}`;
+    await FileSystem.writeAsStringAsync(fileUri, base64, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    return fileUri;
+  } catch (e) {
+    console.warn("writeBase64PhotoToFile error", e);
+    return "";
+  }
+};
+
+/* ----------------- digilocker xml parser ----------------- */
+
+type ParsedAadhaar = {
+  uid: string;
+  firstName: string;
+  lastName: string;
+  fatherName: string;
+  dob: string; // YYYY-MM-DD
+  gender: string; // male | female | other
+  address: string;
+  pinCode: string;
+  stateName: string;
+  cityName: string;
+  photoBase64: string; // base64 JPEG from <Pht>
+};
+
+const parseDigilockerXml = (xml?: string): ParsedAadhaar | null => {
+  if (!xml) return null;
+
+  const pick = (re: RegExp) => {
+    const m = re.exec(xml);
+    return m?.[1]?.trim() ?? "";
+  };
+
+  // UID (masked like xxxxxxxx2151)
+  const uid = pick(/<UidData[^>]*\buid="([^"]*)"/);
+
+  // POI block
+  const name = pick(/<Poi[^>]*\bname="([^"]*)"/);
+  const dobRaw = pick(/<Poi[^>]*\bdob="([^"]*)"/); // DD-MM-YYYY
+  const genderRaw = pick(/<Poi[^>]*\bgender="([^"]*)"/); // M/F/T
+
+  // POA block
+  const house = pick(/<Poa[^>]*\bhouse="([^"]*)"/);
+  const street = pick(/<Poa[^>]*\bstreet="([^"]*)"/);
+  const vtc = pick(/<Poa[^>]*\bvtc="([^"]*)"/);
+  const po = pick(/<Poa[^>]*\bpo="([^"]*)"/);
+  const dist = pick(/<Poa[^>]*\bdist="([^"]*)"/);
+  const stateName = pick(/<Poa[^>]*\bstate="([^"]*)"/);
+  const pc = pick(/<Poa[^>]*\bpc="([^"]*)"/);
+
+  // Photo — base64 JPEG inside <Pht>...</Pht>
+  const photoBase64 = pick(/<Pht>([\s\S]*?)<\/Pht>/);
+
+  // DOB: DD-MM-YYYY -> YYYY-MM-DD
+  let dob = "";
+  if (dobRaw) {
+    const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dobRaw);
+    if (m) dob = `${m[3]}-${m[2]}-${m[1]}`;
+  }
+
+  // Gender
+  const genderMap: Record<string, string> = {
+    M: "male",
+    F: "female",
+    T: "other",
+  };
+  const gender = genderRaw ? genderMap[genderRaw.toUpperCase()] ?? "" : "";
+
+  // Name split (first word = first, rest = last)
+  const nameParts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  const firstName = nameParts[0] ?? "";
+  const lastName = nameParts.slice(1).join(" ");
+
+  // Address line
+  const address = [house, street, vtc, po, dist, stateName]
+    .filter(Boolean)
+    .join(", ");
+
+  return {
+    uid,
+    firstName,
+    lastName,
+    fatherName: "", // not in Aadhaar XML
+    dob,
+    gender,
+    address,
+    pinCode: pc,
+    stateName,
+    cityName: vtc || po,
+    photoBase64,
+  };
 };
 
 /* ----------------- picker modal ----------------- */
@@ -221,16 +348,16 @@ type PickerModalProps = {
 const PickerModal = ({
   visible,
   title,
-  searchPlaceholder = 'Search...',
+  searchPlaceholder = "Search...",
   items,
   onClose,
   onSelect,
   colors,
-  emptyText = 'No options available',
+  emptyText = "No options available",
 }: PickerModalProps) => {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   useEffect(() => {
-    if (visible) setQuery('');
+    if (visible) setQuery("");
   }, [visible]);
 
   const safeItems = Array.isArray(items) ? items : [];
@@ -281,7 +408,7 @@ const PickerModal = ({
             />
             {query?.length > 0 && (
               <TouchableOpacity
-                onPress={() => setQuery('')}
+                onPress={() => setQuery("")}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
                 <Text style={{ color: colors.textMuted, fontSize: 16 }}>✕</Text>
@@ -299,7 +426,7 @@ const PickerModal = ({
                 style={{
                   color: colors.textMuted,
                   padding: 12,
-                  textAlign: 'center',
+                  textAlign: "center",
                 }}
               >
                 {emptyText}
@@ -327,8 +454,8 @@ const PickerModal = ({
 
 const ProfileKycScreen = () => {
   const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
-  const colors = Colors[isDark ? 'dark' : 'light'];
+  const isDark = scheme === "dark";
+  const colors = Colors[isDark ? "dark" : "light"];
   const router = useRouter();
   const dispatch = useDispatch();
   const { user } = useSelector((state: any) => state.auth);
@@ -337,20 +464,37 @@ const ProfileKycScreen = () => {
   const servicesState = useSelector((state: any) => state?.services);
   const serviceMapRaw = servicesState?.serviceMapingId?.mappings;
 
-  const servicesdata = useMemo(() => {
+  const panServicesdata = useMemo(() => {
     if (!Array.isArray(serviceMapRaw)) return undefined;
     return serviceMapRaw.find(
       (item: any) =>
-        (item?.serviceCode ?? '').toUpperCase() === 'PAN_VERIFICATION',
+        (item?.serviceCode ?? "").toUpperCase() === "PAN_VERIFICATION",
+    );
+  }, [serviceMapRaw]);
+
+  const digilockerServicesdata = useMemo(() => {
+    if (!Array.isArray(serviceMapRaw)) return undefined;
+    return serviceMapRaw.find(
+      (item: any) =>
+        (item?.serviceCode ?? "").toUpperCase() === "DIGILOCKER_VERIFICATION",
     );
   }, [serviceMapRaw]);
 
   const [step, setStep] = useState(0);
 
   const [showDobPicker, setShowDobPicker] = useState(false);
-  const [openPicker, setOpenPicker] = useState<null | 'state' | 'city'>(null);
+  const [openPicker, setOpenPicker] = useState<null | "state" | "city">(null);
   const [uploadingField, setUploadingField] = useState<FieldName | null>(null);
   const [verifyingPan, setVerifyingPan] = useState(false);
+
+  // DigiLocker flow state
+  const [showDigilocker, setShowDigilocker] = useState(false);
+  const [digilockerVerified, setDigilockerVerified] = useState(false);
+  const [digilockerDismissed, setDigilockerDismissed] = useState(false);
+
+  // PAN verified name (shown below PAN input)
+  const [verifiedPanName, setVerifiedPanName] = useState<string>("");
+  const [verifiedPanNumber, setVerifiedPanNumber] = useState<string>("");
 
   /* ---------- Redux slice data ---------- */
   const states: StateItem[] = useSelector(
@@ -362,9 +506,7 @@ const ProfileKycScreen = () => {
   const loading: boolean = useSelector(
     (s: any) => s?.profileKyc?.loading ?? false,
   );
-  const KYCData: any = useSelector(
-    (s: any) => s?.profileKyc?.KYCData ?? null,
-  );
+  const KYCData: any = useSelector((s: any) => s?.profileKyc?.KYCData ?? null);
 
   const {
     control,
@@ -377,29 +519,42 @@ const ProfileKycScreen = () => {
     formState: { errors },
   } = useForm<ProfileKycFormValues>({
     resolver: zodResolver(KycValidation.profileKYC),
-    mode: 'onTouched',
+    mode: "onTouched",
     defaultValues: {
-      pan: '',
-      aadhaar: '',
-      first_name: '',
-      last_name: '',
-      father_name: '',
-      dob: '',
-      gender: '',
-      state: '', // UUID
-      city: '',  // UUID
-      address: '',
-      pinCode: '',
-      pan_document: '',
-      aadhaar_front_doc: '',
-      aadhaar_back_doc: '',
-      address_proof_doc: '',
-      user_photo_doc: '',
+      pan: "",
+      aadhaar: "",
+      first_name: "",
+      last_name: "",
+      father_name: "",
+      dob: "",
+      gender: "",
+      state: "", // UUID
+      city: "", // UUID
+      address: "",
+      pinCode: "",
+      pan_document: "",
+      aadhaar_front_doc: "",
+      aadhaar_back_doc: "",
+      address_proof_doc: "",
+      user_photo_doc: "",
     },
   });
 
-  const selectedStateId = watch('state');
-  const selectedCityId = watch('city');
+  const selectedStateId = watch("state");
+  const selectedCityId = watch("city");
+  const watchedPan = watch("pan");
+
+  // Clear verified PAN name if user edits the PAN number after verification
+  useEffect(() => {
+    if (
+      verifiedPanNumber &&
+      watchedPan &&
+      watchedPan.toUpperCase() !== verifiedPanNumber.toUpperCase()
+    ) {
+      setVerifiedPanName("");
+      setVerifiedPanNumber("");
+    }
+  }, [watchedPan, verifiedPanNumber]);
 
   /* ---------- load states + services once ---------- */
   useEffect(() => {
@@ -414,6 +569,25 @@ const ProfileKycScreen = () => {
     const stateCode = stateObj?.stateCode ?? selectedStateId;
     getAllCitiesApiCall(stateCode, dispatch);
   }, [selectedStateId, states, dispatch]);
+
+  /* ---------- auto-open DigiLocker page when service is available ---------- */
+  useEffect(() => {
+    if (
+      digilockerServicesdata?.id &&
+      !digilockerVerified &&
+      !digilockerDismissed &&
+      step === 0 &&
+      !showDigilocker
+    ) {
+      setShowDigilocker(true);
+    }
+  }, [
+    digilockerServicesdata?.id,
+    digilockerVerified,
+    digilockerDismissed,
+    step,
+    showDigilocker,
+  ]);
 
   /* ---------- prefill from existing KYC ---------- */
   useEffect(() => {
@@ -433,30 +607,31 @@ const ProfileKycScreen = () => {
       ? states?.find((s) => s.id === backendStateId)
       : undefined;
 
-    const cityMatch = backendCityId && Array.isArray(cities)
-      ? cities.find((c: any) => c?.id === backendCityId)
-      : undefined;
+    const cityMatch =
+      backendCityId && Array.isArray(cities)
+        ? cities.find((c: any) => c?.id === backendCityId)
+        : undefined;
 
     reset({
-      pan: docByType('PAN')?.documentNumber ?? '',
+      pan: docByType("PAN")?.documentNumber ?? "",
       aadhaar:
-        docByType('AADHAAR_FRONT')?.documentNumber ??
-        docByType('AADHAAR_BACK')?.documentNumber ??
-        '',
-      first_name: KYCData?.personalInfo?.firstName ?? '',
-      last_name: KYCData?.personalInfo?.lastName ?? '',
-      father_name: KYCData?.personalInfo?.fatherName ?? '',
-      dob: (KYCData?.personalInfo?.dob ?? '').slice(0, 10),
-      gender: (KYCData?.personalInfo?.gender ?? '').toLowerCase(),
-      address: KYCData?.address?.address ?? '',
-      pinCode: KYCData?.address?.pinCode ?? '',
-      state: stateMatch?.id ?? backendStateId ?? '',
-      city: cityMatch?.id ?? backendCityId ?? '',
-      pan_document: docByType('PAN')?.documentUrl ?? '',
-      aadhaar_front_doc: docByType('AADHAAR_FRONT')?.documentUrl ?? '',
-      aadhaar_back_doc: docByType('AADHAAR_BACK')?.documentUrl ?? '',
-      address_proof_doc: docByType('ADDRESS_PROOF')?.documentUrl ?? '',
-      user_photo_doc: docByType('USER_PHOTO')?.documentUrl ?? '',
+        docByType("AADHAAR_FRONT")?.documentNumber ??
+        docByType("AADHAAR_BACK")?.documentNumber ??
+        "",
+      first_name: KYCData?.personalInfo?.firstName ?? "",
+      last_name: KYCData?.personalInfo?.lastName ?? "",
+      father_name: KYCData?.personalInfo?.fatherName ?? "",
+      dob: (KYCData?.personalInfo?.dob ?? "").slice(0, 10),
+      gender: (KYCData?.personalInfo?.gender ?? "").toLowerCase(),
+      address: KYCData?.address?.address ?? "",
+      pinCode: KYCData?.address?.pinCode ?? "",
+      state: stateMatch?.id ?? backendStateId ?? "",
+      city: cityMatch?.id ?? backendCityId ?? "",
+      pan_document: docByType("PAN")?.documentUrl ?? "",
+      aadhaar_front_doc: docByType("AADHAAR_FRONT")?.documentUrl ?? "",
+      aadhaar_back_doc: docByType("AADHAAR_BACK")?.documentUrl ?? "",
+      address_proof_doc: docByType("ADDRESS_PROOF")?.documentUrl ?? "",
+      user_photo_doc: docByType("USER_PHOTO")?.documentUrl ?? "",
     });
   }, [KYCData, states, cities, reset]);
 
@@ -465,13 +640,13 @@ const ProfileKycScreen = () => {
 
   /* ---------- PAN verification ---------- */
   const handlePanVerifybnt = useCallback(async () => {
-    const panNumber = (getValues('pan') ?? '').trim().toUpperCase();
+    const panNumber = (getValues("pan") ?? "").trim().toUpperCase();
     if (!panNumber) {
-      showError('Please enter PAN number first.');
+      showError("Please enter PAN number first.");
       return;
     }
-    if (!servicesdata?.id) {
-      showError('PAN verification service is not available right now.');
+    if (!panServicesdata?.id) {
+      showError("PAN verification service is not available right now.");
       return;
     }
 
@@ -479,42 +654,129 @@ const ProfileKycScreen = () => {
       setVerifyingPan(true);
       const payload = {
         panNumber,
-        serviceProviderMappingId: servicesdata.id,
+        serviceProviderMappingId: panServicesdata.id,
       };
 
-      // NOTE: pass payload to the API call (original code dropped it)
       const res = await verifyPanApiCall(payload, dispatch);
 
-      if (res?.success === true) {
+      if (res?.category === "NULL") {
         const data = res?.data ?? {};
-        // Map each field to its correct form field (original set first_name 3x)
-        if (data.firstName) setValue('first_name', data.firstName);
-        if (data.lastName) setValue('last_name', data.lastName);
-        if (data.fatherName) setValue('father_name', data.fatherName);
+
+        const firstName = clean(data.firstName);
+        const middleName = clean(data.middleName);
+        const lastName = clean(data.lastName);
+        const fatherName = clean(data.fatherName);
+        const fallbackName = clean(data.name);
+
+        const combinedLastName = [middleName, lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+
+        if (firstName) setValue("first_name", firstName);
+        if (combinedLastName) setValue("last_name", combinedLastName);
+        if (fatherName) setValue("father_name", fatherName);
+
+        const fullName =
+          [firstName, middleName, lastName].filter(Boolean).join(" ").trim() ||
+          fallbackName;
+
+        setVerifiedPanName(fullName);
+        setVerifiedPanNumber(panNumber);
       } else {
-        showError(res?.message);
+        showError(res?.data?.message ?? "PAN verification failed.");
       }
     } catch (error: any) {
-      showError(error?.message ?? 'Unable to verify PAN.');
+      showError(error?.message ?? "Unable to verify PAN.");
     } finally {
       setVerifyingPan(false);
     }
-  }, [dispatch, getValues, setValue, servicesdata?.id]);
+  }, [dispatch, getValues, setValue, panServicesdata?.id]);
 
-  /* -------------- build FormData — UNCHANGED -------------- */
+  /* ---------- DigiLocker handlers ---------- */
+  const handleDigilockerSuccess = useCallback(
+    async (data: any) => {
+      // Close the DigiLocker screen immediately
+      setShowDigilocker(false);
+
+      // ✅ DigilockerPage calls onSuccess(res.data), so `data` IS the payload.
+      //    XML lives at data.aadhaar.rawXml.
+      const xmlData: string | undefined =
+        data?.aadhaar?.rawXml ?? data?.data?.aadhaar?.rawXml;
+
+      console.log("DigiLocker rawXml present:", !!xmlData);
+
+      if (!xmlData) {
+        showError("Could not read Aadhaar data from DigiLocker.");
+        return;
+      }
+
+      const parsed = parseDigilockerXml(xmlData);
+      if (!parsed) {
+        showError("Invalid Aadhaar XML received.");
+        return;
+      }
+
+      // ---- text fields ----
+      if (parsed.firstName)
+        setValue("first_name", parsed.firstName, { shouldValidate: true });
+      if (parsed.lastName)
+        setValue("last_name", parsed.lastName, { shouldValidate: true });
+      if (parsed.dob)
+        setValue("dob", parsed.dob, { shouldValidate: true });
+      if (parsed.gender)
+        setValue("gender", parsed.gender, { shouldValidate: true });
+      if (parsed.address)
+        setValue("address", parsed.address, { shouldValidate: true });
+      if (parsed.pinCode)
+        setValue("pinCode", parsed.pinCode, { shouldValidate: true });
+
+      // Aadhaar (masked from DigiLocker) — only set if empty
+      if (parsed.uid && !getValues("aadhaar")) {
+        setValue("aadhaar", parsed.uid, { shouldValidate: true });
+      }
+
+      // ---- user photo (base64 → cache file) ----
+      if (parsed.photoBase64) {
+        // Optional: clean up any previous DigiLocker photos first
+        try {
+          const dir = `${FileSystem.cacheDirectory}kyc/`;
+          const dirInfo = await FileSystem.getInfoAsync(dir);
+          if (dirInfo.exists) {
+            await FileSystem.deleteAsync(dir, { idempotent: true });
+          }
+        } catch {}
+
+        const photoUri = await writeBase64PhotoToFile(parsed.photoBase64);
+        if (photoUri) {
+          setValue("user_photo_doc", photoUri, { shouldValidate: true });
+        }
+      }
+
+      // ✅ Mark verified ONLY after successful parsing
+      setDigilockerVerified(true);
+    },
+    [setValue, getValues],
+  );
+
+  const handleDigilockerCancel = useCallback(() => {
+    setShowDigilocker(false);
+    // Mark dismissed so the auto-open effect does not immediately reopen it
+    setDigilockerDismissed(true);
+  }, []);
+
+  /* -------------- build FormData -------------- */
   const submit = async (values: ProfileKycFormValues) => {
     const formData = new FormData();
 
-    // ---------- scalar fields ----------
-    formData.append('userId', String(id ?? ''));
+    formData.append("userId", String(id ?? ""));
 
     const kycId =
       KYCData?.kycId ?? KYCData?.id ?? KYCData?.kyc?.id ?? undefined;
-    if (kycId) formData.append('kycId', String(kycId));
+    if (kycId) formData.append("kycId", String(kycId));
 
-    // ---------- JSON-encoded nested objects ----------
     formData.append(
-      'personalInfo',
+      "personalInfo",
       JSON.stringify({
         firstName: values.first_name.trim(),
         lastName: values.last_name.trim(),
@@ -525,16 +787,15 @@ const ProfileKycScreen = () => {
     );
 
     formData.append(
-      'address',
+      "address",
       JSON.stringify({
         address: values.address.trim(),
         pinCode: values.pinCode.trim(),
-        stateId: values.state, // UUID
-        cityId: values.city,   // UUID
+        stateId: values.state,
+        cityId: values.city,
       }),
     );
 
-    // ---------- documents metadata + files ----------
     const documents: Array<{
       documentType: DocumentType;
       documentNumber: string;
@@ -559,13 +820,12 @@ const ProfileKycScreen = () => {
           ...(remote ? { documentUrl: uri } : {}),
         });
 
-        // Skip remote URLs — only freshly picked local files get uploaded
+        // Skip remote URLs — only freshly picked / written local files get uploaded
         if (remote) return;
 
         const name = safeFileName(uri, `${meta.type.toLowerCase()}.jpg`);
         const type = inferMimeType(name);
 
-        // ✅ Same RN FormData file pattern as AddFundModal
         formData.append(`files[${meta.type}]`, {
           uri,
           name,
@@ -574,9 +834,8 @@ const ProfileKycScreen = () => {
       },
     );
 
-    formData.append('documents', JSON.stringify(documents));
+    formData.append("documents", JSON.stringify(documents));
 
-    // ---------- call slice with FormData ----------
     await kycSubmitApiCall(formData, dispatch);
   };
 
@@ -593,7 +852,6 @@ const ProfileKycScreen = () => {
 
   const handleBack = () => {
     if (step === 0) {
-      // Don't reset the form — would wipe prefilled KYC data
       if (router.canGoBack()) router.back();
     } else {
       setStep((s) => s - 1);
@@ -604,7 +862,7 @@ const ProfileKycScreen = () => {
   const pickDocument = async (
     fieldName: FieldName,
     onChange: (uri: string) => void,
-    allowTypes: string[] = ['application/pdf', 'image/*'],
+    allowTypes: string[] = ["application/pdf", "image/*"],
   ) => {
     try {
       setUploadingField(fieldName);
@@ -622,7 +880,7 @@ const ProfileKycScreen = () => {
 
       if (file.size && file.size > MAX_FILE_SIZE_BYTES) {
         Alert.alert(
-          'File too large',
+          "File too large",
           `Maximum allowed size is ${MAX_FILE_SIZE_MB} MB.`,
         );
         return;
@@ -630,8 +888,8 @@ const ProfileKycScreen = () => {
 
       onChange(file.uri);
     } catch (e) {
-      console.warn('DocumentPicker error', e);
-      Alert.alert('Error', 'Could not pick document. Please try again.');
+      console.warn("DocumentPicker error", e);
+      Alert.alert("Error", "Could not pick document. Please try again.");
     } finally {
       setUploadingField(null);
     }
@@ -653,8 +911,8 @@ const ProfileKycScreen = () => {
     const meta = FIELD_META[name];
     const errorMsg = errors[name]?.message as string | undefined;
 
-    /* ---- PAN (with Verify button) ---- */
-    if (name === 'pan') {
+    /* ---- PAN ---- */
+    if (name === "pan") {
       return (
         <View key={name} style={styles.field}>
           {renderLabel(name)}
@@ -677,7 +935,7 @@ const ProfileKycScreen = () => {
                   placeholderTextColor={colors.textMuted}
                   autoCapitalize="characters"
                   onBlur={onBlur}
-                  value={value == null ? '' : String(value)}
+                  value={value == null ? "" : String(value)}
                   onChangeText={(t) => onChange(t.toUpperCase())}
                   maxLength={10}
                 />
@@ -701,6 +959,51 @@ const ProfileKycScreen = () => {
               )}
             </TouchableOpacity>
           </View>
+
+          {!!verifiedPanName && (
+            <View
+              style={[
+                styles.verifiedNameBox,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: colors.surfaceTertiary,
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  color: colors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: "600",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.4,
+                }}
+              >
+                Name as per PAN
+              </Text>
+              <Text
+                style={{
+                  color: colors.text,
+                  fontSize: 15,
+                  fontWeight: "600",
+                  marginTop: 4,
+                }}
+              >
+                {verifiedPanName}
+              </Text>
+              <Text
+                style={{
+                  color: colors.success ?? "#16A34A",
+                  fontSize: 11,
+                  fontWeight: "600",
+                  marginTop: 4,
+                }}
+              >
+                ✓ Verified
+              </Text>
+            </View>
+          )}
+
           {errorMsg ? (
             <Text style={[styles.error, { color: colors.error }]}>
               {errorMsg}
@@ -713,10 +1016,10 @@ const ProfileKycScreen = () => {
     /* ---- DOCUMENT picker ---- */
     if (meta.isDocument) {
       const docInfo = DOC_FIELD_MAP[name as keyof typeof DOC_FIELD_MAP];
-      const allowImageOnly = docInfo.type === 'USER_PHOTO';
+      const allowImageOnly = docInfo.type === "USER_PHOTO";
       const allowTypes = allowImageOnly
-        ? ['image/*']
-        : ['application/pdf', 'image/*'];
+        ? ["image/*"]
+        : ["application/pdf", "image/*"];
 
       return (
         <View key={name} style={styles.field}>
@@ -729,9 +1032,9 @@ const ProfileKycScreen = () => {
               const remote = isRemoteUri(uri);
               const fileName = uri
                 ? remote
-                  ? uri.split('/').pop()?.split('?')[0] ?? 'Uploaded file'
-                  : uri.split('/').pop() ?? ''
-                : '';
+                  ? (uri.split("/").pop()?.split("?")[0] ?? "Uploaded file")
+                  : (uri.split("/").pop() ?? "")
+                : "";
               const isBusy = uploadingField === name;
 
               return (
@@ -756,10 +1059,10 @@ const ProfileKycScreen = () => {
                         <Text
                           style={{
                             color: colors.buttonPrimary,
-                            fontWeight: '600',
+                            fontWeight: "600",
                           }}
                         >
-                          + Choose {allowImageOnly ? 'Photo' : 'File'}
+                          + Choose {allowImageOnly ? "Photo" : "File"}
                         </Text>
                       )}
                     </TouchableOpacity>
@@ -774,21 +1077,34 @@ const ProfileKycScreen = () => {
                         },
                       ]}
                     >
+                      {/* ✅ Thumbnail for USER_PHOTO */}
+                      {allowImageOnly && !remote && (
+                        <Image
+                          source={{ uri }}
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 6,
+                            marginRight: 10,
+                            backgroundColor: colors.surfaceTertiary,
+                          }}
+                        />
+                      )}
                       <Text
                         numberOfLines={1}
                         style={{ color: colors.text, flex: 1 }}
                       >
-                        {remote ? '☁️ ' : '📎 '}
+                        {remote ? "☁️ " : "📎 "}
                         {fileName}
                       </Text>
                       <TouchableOpacity
-                        onPress={() => onChange('')}
+                        onPress={() => onChange("")}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
                         <Text
                           style={{
                             color: colors.error,
-                            fontWeight: '700',
+                            fontWeight: "700",
                             marginLeft: 12,
                           }}
                         >
@@ -812,7 +1128,7 @@ const ProfileKycScreen = () => {
     }
 
     /* ---- DOB picker ---- */
-    if (name === 'dob') {
+    if (name === "dob") {
       return (
         <View key={name} style={styles.field}>
           {renderLabel(name)}
@@ -821,10 +1137,10 @@ const ProfileKycScreen = () => {
             name="dob"
             render={({ field: { value, onChange } }) => {
               const dateObj = parseISO(value);
-              const display = dateObj ? toDisplay(dateObj) : '';
+              const display = dateObj ? toDisplay(dateObj) : "";
 
               const onPick = (_e: DateTimePickerEvent, picked?: Date) => {
-                if (Platform.OS !== 'ios') setShowDobPicker(false);
+                if (Platform.OS !== "ios") setShowDobPicker(false);
                 if (picked) onChange(toISO(picked));
               };
 
@@ -835,7 +1151,7 @@ const ProfileKycScreen = () => {
                     style={[
                       styles.input,
                       {
-                        justifyContent: 'center',
+                        justifyContent: "center",
                         borderColor: errorMsg ? colors.error : colors.border,
                         backgroundColor: colors.surface,
                       },
@@ -846,7 +1162,7 @@ const ProfileKycScreen = () => {
                         color: display ? colors.text : colors.textMuted,
                       }}
                     >
-                      {display || meta.placeholder || 'DD/MM/YYYY'}
+                      {display || meta.placeholder || "DD/MM/YYYY"}
                     </Text>
                   </TouchableOpacity>
 
@@ -854,21 +1170,21 @@ const ProfileKycScreen = () => {
                     <DateTimePicker
                       value={dateObj ?? new Date(2000, 0, 1)}
                       mode="date"
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      display={Platform.OS === "ios" ? "spinner" : "default"}
                       maximumDate={new Date()}
                       onChange={onPick}
                     />
                   )}
 
-                  {showDobPicker && Platform.OS === 'ios' && (
+                  {showDobPicker && Platform.OS === "ios" && (
                     <TouchableOpacity
                       onPress={() => setShowDobPicker(false)}
-                      style={{ alignSelf: 'flex-end', padding: 8 }}
+                      style={{ alignSelf: "flex-end", padding: 8 }}
                     >
                       <Text
                         style={{
                           color: colors.buttonPrimary,
-                          fontWeight: '700',
+                          fontWeight: "700",
                         }}
                       >
                         Done
@@ -889,18 +1205,18 @@ const ProfileKycScreen = () => {
     }
 
     /* ---- STATE ---- */
-    if (name === 'state') {
+    if (name === "state") {
       const selected = states?.find((s) => s.id === selectedStateId);
       return (
         <View key={name} style={styles.field}>
           {renderLabel(name)}
           <TouchableOpacity
             disabled={loading}
-            onPress={() => setOpenPicker('state')}
+            onPress={() => setOpenPicker("state")}
             style={[
               styles.input,
               {
-                justifyContent: 'center',
+                justifyContent: "center",
                 borderColor: errorMsg ? colors.error : colors.border,
                 backgroundColor: colors.surface,
               },
@@ -912,7 +1228,7 @@ const ProfileKycScreen = () => {
               <Text
                 style={{ color: selected ? colors.text : colors.textMuted }}
               >
-                {selected?.stateName ?? 'Select State'}
+                {selected?.stateName ?? "Select State"}
               </Text>
             )}
           </TouchableOpacity>
@@ -923,20 +1239,20 @@ const ProfileKycScreen = () => {
           ) : null}
 
           <PickerModal
-            visible={openPicker === 'state'}
+            visible={openPicker === "state"}
             title="Select State"
             searchPlaceholder="Search state..."
             colors={colors}
             items={states.map((s) => ({
               label: s.stateName,
-              value: s.id, // UUID
+              value: s.id,
             }))}
             onClose={() => setOpenPicker(null)}
             onSelect={(uuid) => {
-              const currentState = getValues('state');
-              setValue('state', uuid, { shouldValidate: true });
+              const currentState = getValues("state");
+              setValue("state", uuid, { shouldValidate: true });
               if (uuid !== currentState) {
-                setValue('city', '', { shouldValidate: false });
+                setValue("city", "", { shouldValidate: false });
               }
             }}
           />
@@ -945,18 +1261,18 @@ const ProfileKycScreen = () => {
     }
 
     /* ---- CITY ---- */
-    if (name === 'city') {
+    if (name === "city") {
       const selected = cities?.find((c) => c.id === selectedCityId);
       return (
         <View key={name} style={styles.field}>
           {renderLabel(name)}
           <TouchableOpacity
             disabled={!selectedStateId || loading}
-            onPress={() => setOpenPicker('city')}
+            onPress={() => setOpenPicker("city")}
             style={[
               styles.input,
               {
-                justifyContent: 'center',
+                justifyContent: "center",
                 borderColor: errorMsg ? colors.error : colors.border,
                 backgroundColor: colors.surface,
                 opacity: !selectedStateId ? 0.6 : 1,
@@ -970,7 +1286,7 @@ const ProfileKycScreen = () => {
                 style={{ color: selected ? colors.text : colors.textMuted }}
               >
                 {selected?.cityName ??
-                  (selectedStateId ? 'Select City' : 'Select state first')}
+                  (selectedStateId ? "Select City" : "Select state first")}
               </Text>
             )}
           </TouchableOpacity>
@@ -981,20 +1297,20 @@ const ProfileKycScreen = () => {
           ) : null}
 
           <PickerModal
-            visible={openPicker === 'city'}
+            visible={openPicker === "city"}
             title="Select City"
             searchPlaceholder="Search city..."
             colors={colors}
             items={cities?.map((c) => ({
               label: c.cityName,
-              value: c.id, // UUID
+              value: c.id,
             }))}
             onClose={() => setOpenPicker(null)}
             onSelect={(uuid) =>
-              setValue('city', uuid, { shouldValidate: true })
+              setValue("city", uuid, { shouldValidate: true })
             }
             emptyText={
-              selectedStateId ? 'No cities found' : 'Select a state first'
+              selectedStateId ? "No cities found" : "Select a state first"
             }
           />
         </View>
@@ -1031,9 +1347,9 @@ const ProfileKycScreen = () => {
                     >
                       <Text
                         style={{
-                          color: isSel ? '#fff' : colors.text,
-                          fontWeight: '600',
-                          textTransform: 'capitalize',
+                          color: isSel ? "#fff" : colors.text,
+                          fontWeight: "600",
+                          textTransform: "capitalize",
                         }}
                       >
                         {opt}
@@ -1072,17 +1388,13 @@ const ProfileKycScreen = () => {
               ]}
               placeholder={meta.placeholder}
               placeholderTextColor={colors.textMuted}
-              keyboardType={meta.keyboardType ?? 'default'}
-              autoCapitalize={meta.autoCapitalize ?? 'none'}
+              keyboardType={meta.keyboardType ?? "default"}
+              autoCapitalize={meta.autoCapitalize ?? "none"}
               onBlur={onBlur}
-              value={value == null ? '' : String(value)}
+              value={value == null ? "" : String(value)}
               onChangeText={onChange}
               maxLength={
-                name === 'aadhaar'
-                  ? 12
-                  : name === 'pinCode'
-                  ? 6
-                  : undefined
+                name === "aadhaar" ? 12 : name === "pinCode" ? 6 : undefined
               }
             />
           )}
@@ -1097,15 +1409,26 @@ const ProfileKycScreen = () => {
   };
 
   /* -------------- render -------------- */
-  const isRejected = KYCData?.status === 'REJECTED';
+  const isRejected = KYCData?.status === "REJECTED";
+
+  // Auto-opened DigiLocker page (button removed; driven by useEffect above)
+  if (showDigilocker && digilockerServicesdata?.id) {
+    return (
+      <DigilockerPage
+        serviceMappingId={String(digilockerServicesdata.id)}
+        onSuccess={handleDigilockerSuccess}
+        onCancel={handleDigilockerCancel}
+      />
+    );
+  }
 
   return (
     <View
       style={[styles.container, { backgroundColor: colors.surfaceTertiary }]}
     >
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.kav}
       >
         <HeaderSection title="Profile KYC" />
@@ -1115,7 +1438,7 @@ const ProfileKycScreen = () => {
             style={[
               styles.banner,
               {
-                backgroundColor: isDark ? '#3A0F0F' : '#FEE2E2',
+                backgroundColor: isDark ? "#3A0F0F" : "#FEE2E2",
                 borderColor: colors.error,
               },
             ]}
@@ -1136,7 +1459,7 @@ const ProfileKycScreen = () => {
             style={{
               color: colors.textSecondary,
               fontSize: 12,
-              fontWeight: '600',
+              fontWeight: "600",
             }}
           >
             Step {step + 1} of {STEPS.length} · {STEPS[step].title}
@@ -1170,8 +1493,8 @@ const ProfileKycScreen = () => {
             onPress={handleBack}
             style={[styles.secondaryBtn, { borderColor: colors.border }]}
           >
-            <Text style={{ color: colors.text, fontWeight: '600' }}>
-              {step === 0 ? 'Cancel' : 'Back'}
+            <Text style={{ color: colors.text, fontWeight: "600" }}>
+              {step === 0 ? "Cancel" : "Back"}
             </Text>
           </TouchableOpacity>
 
@@ -1191,7 +1514,7 @@ const ProfileKycScreen = () => {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.primaryBtnText}>
-                {isLastStep ? 'Submit' : 'Next'}
+                {isLastStep ? "Submit" : "Next"}
               </Text>
             )}
           </TouchableOpacity>
@@ -1208,15 +1531,15 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   kav: { flex: 1 },
   progressWrap: { paddingHorizontal: 20, paddingTop: 16 },
-  progressTrack: { flexDirection: 'row', gap: 6, marginTop: 10 },
+  progressTrack: { flexDirection: "row", gap: 6, marginTop: 10 },
   progressBar: { flex: 1, height: 4, borderRadius: 2 },
   scrollContent: { padding: 20, paddingBottom: 40 },
   field: { marginTop: 16 },
   label: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: "600",
     marginBottom: 6,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.4,
   },
   input: {
@@ -1227,63 +1550,63 @@ const styles = StyleSheet.create({
     fontSize: 15,
     minHeight: 46,
   },
-  panRow: { flexDirection: 'row', gap: 8 },
+  panRow: { flexDirection: "row", gap: 8 },
   panInput: { flex: 1 },
   verifyBtn: {
     paddingHorizontal: 16,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     minHeight: 46,
   },
-  verifyBtnText: { color: '#fff', fontWeight: '700' },
-  error: { fontSize: 12, marginTop: 4, fontWeight: '500' },
-  optionRow: { flexDirection: 'row', gap: 10 },
+  verifyBtnText: { color: "#fff", fontWeight: "700" },
+  error: { fontSize: 12, marginTop: 4, fontWeight: "500" },
+  optionRow: { flexDirection: "row", gap: 10 },
   option: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 12,
     borderWidth: 1,
-    alignItems: 'center',
+    alignItems: "center",
   },
   footer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
     padding: 20,
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingBottom:50
+    paddingBottom: 50,
   },
   secondaryBtn: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 14,
-    alignItems: 'center',
+    alignItems: "center",
     borderWidth: 1,
   },
   primaryBtn: {
     flex: 1.4,
     borderRadius: 14,
     paddingVertical: 14,
-    alignItems: 'center',
+    alignItems: "center",
   },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  primaryBtnText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
     paddingHorizontal: 24,
   },
   modalCard: { borderRadius: 16, padding: 12 },
-  modalTitle: { fontSize: 16, fontWeight: '700', padding: 12 },
+  modalTitle: { fontSize: 16, fontWeight: "700", padding: 12 },
   modalRow: {
     paddingVertical: 14,
     paddingHorizontal: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 12,
@@ -1294,14 +1617,14 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14, paddingVertical: 0 },
 
   docBtn: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderStyle: 'dashed',
+    alignItems: "center",
+    justifyContent: "center",
+    borderStyle: "dashed",
   },
   docRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
 
   banner: {
@@ -1311,6 +1634,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
   },
-  bannerTitle: { fontWeight: '700', marginBottom: 4 },
+  bannerTitle: { fontWeight: "700", marginBottom: 4 },
   bannerText: { fontSize: 13 },
+
+  verifiedNameBox: {
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
 });

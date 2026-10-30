@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -77,6 +77,20 @@ type ApplicableCommission = {
   createdAt?: string;
   updatedAt?: string;
   [key: string]: any;
+};
+
+type PermissionEntry = {
+  id?: string;
+  resource: string;
+  action: string;
+  source?: string;
+  effect?: string;
+};
+
+type PermissionsPayload = {
+  isSuperAdmin?: boolean;
+  role?: PermissionEntry[];
+  user?: PermissionEntry[];
 };
 
 /* --------------------------- Constants --------------------------- */
@@ -164,8 +178,40 @@ const ApplicableCommissionScreen = () => {
   const { commisionApplicableList, loading } = useSelector(
     (state: any) => state?.commission,
   );
-  const { user } = useSelector((state: any) => state?.auth);
-  const userId = user?.user?.id;
+  const { user: authUser } = useSelector((state: any) => state?.auth);
+  const userId = authUser?.user?.id;
+
+  /* ===== Permissions ===== */
+  const permissionsPayload: PermissionsPayload | undefined =
+    authUser?.permissions ?? authUser?.data?.permissions;
+
+  const isSuperAdmin = permissionsPayload?.isSuperAdmin === true;
+  const userPermissions: PermissionEntry[] = permissionsPayload?.user ?? [];
+
+  const permissionSet = useMemo(() => {
+    return new Set(
+      userPermissions
+        .filter(
+          (p) =>
+            p &&
+            typeof p.resource === "string" &&
+            typeof p.action === "string" &&
+            (p.effect == null || p.effect === "ALLOW"),
+        )
+        .map((p) => `${p.resource.trim()}:${p.action.trim()}`),
+    );
+  }, [userPermissions]);
+
+  const can = useCallback(
+    (resource: string, action: string) => {
+      if (isSuperAdmin) return true;
+      return permissionSet.has(`${resource}:${action}`);
+    },
+    [permissionSet, isSuperAdmin],
+  );
+
+  // Read-only screen → all we need is COMMISSION:READ to open a card's detail view
+  const canReadCommission = can("COMMISSION", "READ");
 
   const [commissions, setCommissions] = useState<ApplicableCommission[]>([]);
   const [headerUser, setHeaderUser] = useState<CommissionUser | null>(null);
@@ -197,6 +243,9 @@ const ApplicableCommissionScreen = () => {
   /* ---------------- Initial fetch ---------------- */
 
   useEffect(() => {
+    // Don't fetch if the user can't even read commission data
+    if (!canReadCommission) return;
+
     appendedPagesRef.current = new Set([1]);
     currentPageRef.current = 1;
     setHasMore(true);
@@ -215,7 +264,7 @@ const ApplicableCommissionScreen = () => {
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [userId, canReadCommission]);
 
   /* ---------------- Sync Redux → local ---------------- */
 
@@ -250,6 +299,7 @@ const ApplicableCommissionScreen = () => {
 
   const loadMore = useCallback(async () => {
     if (
+      !canReadCommission ||
       !hasMore ||
       loading ||
       loadingMore ||
@@ -276,6 +326,7 @@ const ApplicableCommissionScreen = () => {
       isFetchingRef.current = false;
     }
   }, [
+    canReadCommission,
     hasMore,
     loading,
     loadingMore,
@@ -285,6 +336,7 @@ const ApplicableCommissionScreen = () => {
   ]);
 
   const onRefresh = async () => {
+    if (!canReadCommission) return;
     setRefreshing(true);
     appendedPagesRef.current = new Set([1]);
     currentPageRef.current = 1;
@@ -299,6 +351,7 @@ const ApplicableCommissionScreen = () => {
   };
 
   const openDetails = (item: ApplicableCommission) => {
+    if (!canReadCommission) return;
     setSelected(item);
     setDetailsOpen(true);
   };
@@ -488,7 +541,10 @@ const ApplicableCommissionScreen = () => {
             </Text>
           </View>
           <View
-            style={[styles.headerStatDivider, { backgroundColor: colors.border }]}
+            style={[
+              styles.headerStatDivider,
+              { backgroundColor: colors.border },
+            ]}
           />
           <View style={styles.headerStatItem}>
             <Text
@@ -508,14 +564,40 @@ const ApplicableCommissionScreen = () => {
     );
   };
 
+  /* ---------------- No permission → friendly "no access" view ---------------- */
+
+  if (!canReadCommission) {
+    return (
+      <LinearGradient
+        colors={[colors.backgroundTop, colors.backgroundBottom]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
+        <HeaderSection title="Applicable Commission" />
+        <View style={styles.center}>
+          <Ionicons
+            name="lock-closed-outline"
+            size={48}
+            color={colors.textMuted}
+          />
+          <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+            You don't have permission to view commission rules.
+          </Text>
+        </View>
+      </LinearGradient>
+    );
+  }
+
   /* ---------------- Render ---------------- */
 
   return (
     <LinearGradient
-      colors={[colors.backgroundTop , colors.backgroundBottom]}
+      colors={[colors.backgroundTop, colors.backgroundBottom]}
       start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }} 
-       style={[styles.container, { backgroundColor: colors.background }]}>
+      end={{ x: 1, y: 1 }}
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <HeaderSection title="Applicable Commission" />
 
       {/* List */}
@@ -561,15 +643,17 @@ const ApplicableCommissionScreen = () => {
         />
       )}
 
-      {/* Details modal */}
-      <ViewApplicableCommissionModal
-        visible={detailsOpen}
-        commission={selected}
-        onClose={() => {
-          setDetailsOpen(false);
-          setSelected(null);
-        }}
-      />
+      {/* Details modal — only mount if user can read */}
+      {canReadCommission && (
+        <ViewApplicableCommissionModal
+          visible={detailsOpen}
+          commission={selected}
+          onClose={() => {
+            setDetailsOpen(false);
+            setSelected(null);
+          }}
+        />
+      )}
       <FullScreenLoader loading={loading} />
     </LinearGradient>
   );
@@ -596,9 +680,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 60,
+    paddingHorizontal: 24,
     gap: 10,
   },
-  emptyText: { fontSize: 13.5, fontWeight: "600" },
+  emptyText: {
+    fontSize: 13.5,
+    fontWeight: "600",
+    textAlign: "center",
+  },
 
   /* Header card */
   headerCard: {

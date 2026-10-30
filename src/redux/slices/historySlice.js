@@ -96,10 +96,10 @@ export const getLedgerHistoryDataApiCall = async (payload,dispatch) => {
 export const getReportHistoryDataApiCall = async (types,payload,dispatch) => {
   try {
     console.log(types);
-    
+  
     dispatch(setLoading(true))
     const { BASE_URL ,token} = await company();
-    const res = await fetch(`${BASE_URL}/report/${types}/list`, {
+    const res = await fetch(`${BASE_URL}/report/${types}/list?page=${payload.page}&limit=20`, {
       method: "GET",
       headers: {
          Authorization: `Bearer ${token}`,

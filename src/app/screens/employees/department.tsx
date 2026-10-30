@@ -6,7 +6,7 @@ import { Colors } from "@/constants/theme";
 import { getDepartmentDataApiCall } from "@/redux/slices/employeeManagementSlice";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDispatch, useSelector } from "react-redux";
 
+/* ---------------- Types ---------------- */
 export type Department = {
   id: string;
   departmentCode: string;
@@ -28,6 +29,20 @@ export type Department = {
   [key: string]: any;
 };
 
+type PermissionEntry = {
+  id?: string;
+  resource: string;
+  action: string;
+  source?: string;
+  effect?: string;
+};
+
+type PermissionsPayload = {
+  isSuperAdmin?: boolean;
+  role?: PermissionEntry[];
+  user?: PermissionEntry[];
+};
+
 const DepartmentScreen = () => {
   const dispatch = useDispatch();
   const scheme = useColorScheme();
@@ -35,8 +50,48 @@ const DepartmentScreen = () => {
   const colors = Colors[isDark ? "dark" : "light"];
   const insets = useSafeAreaInsets();
 
+  // ===== Auth: permissions =====
+  const { user: authUser } = useSelector((state: any) => state.auth);
+
+  const permissionsPayload: PermissionsPayload | undefined =
+    authUser?.permissions ?? authUser?.data?.permissions;
+
+  const isSuperAdmin = permissionsPayload?.isSuperAdmin === true;
+  const userPermissions: PermissionEntry[] = permissionsPayload?.user ?? [];
+
+  const permissionSet = useMemo(() => {
+    return new Set(
+      userPermissions
+        .filter(
+          (p) =>
+            p &&
+            typeof p.resource === "string" &&
+            typeof p.action === "string" &&
+            (p.effect == null || p.effect === "ALLOW")
+        )
+        .map((p) => `${p.resource.trim()}:${p.action.trim()}`)
+    );
+  }, [userPermissions]);
+
+  const can = useCallback(
+    (resource: string, action: string) => {
+      if (isSuperAdmin) return true;
+      return permissionSet.has(`${resource}:${action}`);
+    },
+    [permissionSet, isSuperAdmin]
+  );
+
+  // Button-level permissions
+  const canCreateDepartment = can("DEPARTMENT", "CREATE");
+  const canUpdateDepartment = can("DEPARTMENT", "UPDATE");
+  const canAssignDepartmentPermissions = can(
+    "DEPARTMENT",
+    "ASSIGN_PERMISSIONS"
+  );
+
+  // ===== Departments list =====
   const { departmentData, loading } = useSelector(
-    (state: any) => state.employees,
+    (state: any) => state.employees
   );
 
   const [addVisible, setAddVisible] = useState(false);
@@ -44,117 +99,142 @@ const DepartmentScreen = () => {
   const [permVisible, setPermVisible] = useState(false);
   const [selected, setSelected] = useState<Department | null>(null);
 
-  const fetchDepartments = async () => {
+  const fetchDepartments = useCallback(async () => {
     await getDepartmentDataApiCall(dispatch);
-  };
+  }, [dispatch]);
 
   useEffect(() => {
     fetchDepartments();
-  }, []);
+  }, [fetchDepartments]);
 
   const handleEdit = (dept: Department) => {
+    if (!canUpdateDepartment) return;
     setSelected(dept);
     setEditVisible(true);
   };
 
   const handlePermissions = (dept: Department) => {
+    if (!canAssignDepartmentPermissions) return;
     setSelected(dept);
     setPermVisible(true);
   };
 
-  const renderDepartment = ({ item }: { item: Department }) => (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      <View style={styles.cardTop}>
-        <View
-          style={[styles.iconWrap, { backgroundColor: colors.surfacePrimary }]}
-        >
-          <Ionicons
-            name="business-outline"
-            size={20}
-            color={colors.buttonPrimary}
-          />
+  const renderDepartment = ({ item }: { item: Department }) => {
+    // Show action row only if at least one action is allowed
+    const showActionRow =
+      canUpdateDepartment || canAssignDepartmentPermissions;
+
+    return (
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <View style={styles.cardTop}>
+          <View
+            style={[
+              styles.iconWrap,
+              { backgroundColor: colors.surfacePrimary },
+            ]}
+          >
+            <Ionicons
+              name="business-outline"
+              size={20}
+              color={colors.buttonPrimary}
+            />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.name, { color: colors.text }]}>
+              {item.departmentName || "Unnamed Department"}
+            </Text>
+            <Text style={[styles.code, { color: colors.textMuted }]}>
+              {item.departmentCode}
+            </Text>
+          </View>
         </View>
 
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.name, { color: colors.text }]}>
-            {item.departmentName || "Unnamed Department"}
+        {!!item.departmentDescription && (
+          <Text
+            style={[styles.description, { color: colors.textSecondary }]}
+            numberOfLines={2}
+          >
+            {item.departmentDescription}
           </Text>
-          <Text style={[styles.code, { color: colors.textMuted }]}>
-            {item.departmentCode}
-          </Text>
+        )}
+
+        <View style={styles.metaRow}>
+          <View style={styles.metaItem}>
+            <Text style={[styles.metaLabel, { color: colors.textMuted }]}>
+              Permissions
+            </Text>
+            <Text style={[styles.metaValue, { color: colors.text }]}>
+              {item.permissions?.length ?? 0}
+            </Text>
+          </View>
         </View>
+
+        {showActionRow && (
+          <View style={[styles.actionRow, { borderTopColor: colors.border }]}>
+            {canAssignDepartmentPermissions && (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.7}
+                onPress={() => handlePermissions(item)}
+              >
+                <Ionicons
+                  name="key-outline"
+                  size={16}
+                  color={colors.buttonPrimary}
+                />
+                <Text style={[styles.actionText, { color: colors.text }]}>
+                  Permissions
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {canAssignDepartmentPermissions && canUpdateDepartment && (
+              <View
+                style={[
+                  styles.verticalDivider,
+                  { backgroundColor: colors.border },
+                ]}
+              />
+            )}
+
+            {canUpdateDepartment && (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.7}
+                onPress={() => handleEdit(item)}
+              >
+                <Ionicons
+                  name="create-outline"
+                  size={16}
+                  color={colors.buttonPrimary}
+                />
+                <Text style={[styles.actionText, { color: colors.text }]}>
+                  Edit
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
-
-      {!!item.departmentDescription && (
-        <Text
-          style={[styles.description, { color: colors.textSecondary }]}
-          numberOfLines={2}
-        >
-          {item.departmentDescription}
-        </Text>
-      )}
-
-      <View style={styles.metaRow}>
-        <View style={styles.metaItem}>
-          <Text style={[styles.metaLabel, { color: colors.textMuted }]}>
-            Permissions
-          </Text>
-          <Text style={[styles.metaValue, { color: colors.text }]}>
-            {item.permissions?.length ?? 0}
-          </Text>
-        </View>
-      </View>
-
-      <View style={[styles.actionRow, { borderTopColor: colors.border }]}>
-        <TouchableOpacity
-          style={styles.actionBtn}
-          activeOpacity={0.7}
-          onPress={() => handlePermissions(item)}
-        >
-          <Ionicons
-            name="key-outline"
-            size={16}
-            color={colors.buttonPrimary}
-          />
-          <Text style={[styles.actionText, { color: colors.text }]}>
-            Permissions
-          </Text>
-        </TouchableOpacity>
-
-        <View
-          style={[styles.verticalDivider, { backgroundColor: colors.border }]}
-        />
-
-        <TouchableOpacity
-          style={styles.actionBtn}
-          activeOpacity={0.7}
-          onPress={() => handleEdit(item)}
-        >
-          <Ionicons
-            name="create-outline"
-            size={16}
-            color={colors.buttonPrimary}
-          />
-          <Text style={[styles.actionText, { color: colors.text }]}>Edit</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <LinearGradient
-      colors={[colors.backgroundTop , colors.backgroundBottom]}
+      colors={[colors.backgroundTop, colors.backgroundBottom]}
       start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }} 
-       style={[styles.container, { backgroundColor: colors.background }]}>
+      end={{ x: 1, y: 1 }}
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <HeaderSection title="Departments" />
 
       {loading && !departmentData?.length ? (
@@ -187,48 +267,55 @@ const DepartmentScreen = () => {
         />
       )}
 
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => setAddVisible(true)}
-        style={[
-          styles.fab,
-          {
-            backgroundColor: colors.buttonPrimary,
-            bottom: insets.bottom + 24,
-          },
-        ]}
-      >
-        <Ionicons name="add" size={26} color="#FFFFFF" />
-      </TouchableOpacity>
+      {/* FAB — only with DEPARTMENT:CREATE */}
+      {canCreateDepartment && (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setAddVisible(true)}
+          style={[
+            styles.fab,
+            {
+              backgroundColor: colors.buttonPrimary,
+              bottom: insets.bottom + 24,
+            },
+          ]}
+        >
+          <Ionicons name="add" size={26} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
 
-      {/* Add */}
-      <AddDepartmentModal
-        visible={addVisible}
-        onClose={() => setAddVisible(false)}
-        onSuccess={fetchDepartments}
-      />
+      {/* Modals — only mount when permitted */}
+      {canCreateDepartment && (
+        <AddDepartmentModal
+          visible={addVisible}
+          onClose={() => setAddVisible(false)}
+          onSuccess={fetchDepartments}
+        />
+      )}
 
-      {/* Edit */}
-      <EditDepartmentModal
-        visible={editVisible}
-        department={selected}
-        onClose={() => {
-          setEditVisible(false);
-          setSelected(null);
-        }}
-        onSuccess={fetchDepartments}
-      />
+      {canUpdateDepartment && (
+        <EditDepartmentModal
+          visible={editVisible}
+          department={selected}
+          onClose={() => {
+            setEditVisible(false);
+            setSelected(null);
+          }}
+          onSuccess={fetchDepartments}
+        />
+      )}
 
-      {/* Permissions — receives the tapped department */}
-      <DepartmentPermissionModal
-        visible={permVisible}
-        department={selected}
-        onClose={() => {
-          setPermVisible(false);
-          setSelected(null);
-        }}
-        onSuccess={fetchDepartments}
-      />
+      {canAssignDepartmentPermissions && (
+        <DepartmentPermissionModal
+          visible={permVisible}
+          department={selected}
+          onClose={() => {
+            setPermVisible(false);
+            setSelected(null);
+          }}
+          onSuccess={fetchDepartments}
+        />
+      )}
     </LinearGradient>
   );
 };

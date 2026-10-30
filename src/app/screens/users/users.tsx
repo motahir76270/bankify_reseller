@@ -4,11 +4,12 @@ import UserPermissionModal from "@/components/modal/usersManagement/userPermissi
 import HeaderSection from "@/components/ui/headerSections";
 import { Colors } from "@/constants/theme";
 import { FullScreenLoader } from "@/hooks/use-screensLoder";
+import { getMeApiCall } from "@/redux/slices/authSlice";
 import { getUsersListApiCall } from "@/redux/slices/userMangementSlice";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -23,6 +24,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useDispatch, useSelector } from "react-redux";
 
+/* ---------------- Types ---------------- */
 export type User = {
   id: string;
   firstName: string;
@@ -38,6 +40,20 @@ export type User = {
 };
 
 type StatusFilter = "ALL" | "ACTIVE" | "INACTIVE" | "SUSPENDED";
+
+type PermissionEntry = {
+  id?: string;
+  resource: string;
+  action: string;
+  source?: string;
+  effect?: string;
+};
+
+type PermissionsPayload = {
+  isSuperAdmin?: boolean;
+  role?: PermissionEntry[];
+  user?: PermissionEntry[];
+};
 
 const PAGE_SIZE = 10;
 
@@ -55,11 +71,46 @@ const UsersScreen = () => {
   const colors = Colors[isDark ? "dark" : "light"];
   const insets = useSafeAreaInsets();
 
-  // Raw users from redux (this gets replaced on every fetch)
+  // ===== Auth: permissions =====
+  const { user: authUser } = useSelector((state: any) => state.auth);
+
+  const permissionsPayload: PermissionsPayload | undefined =
+    authUser?.permissions ?? authUser?.data?.permissions;
+
+  const isSuperAdmin = permissionsPayload?.isSuperAdmin === true;
+  const userPermissions: PermissionEntry[] = permissionsPayload?.user ?? [];
+
+  const permissionSet = useMemo(() => {
+    return new Set(
+      userPermissions
+        .filter(
+          (p) =>
+            p &&
+            typeof p.resource === "string" &&
+            typeof p.action === "string" &&
+            (p.effect == null || p.effect === "ALLOW")
+        )
+        .map((p) => `${p.resource.trim()}:${p.action.trim()}`)
+    );
+  }, [userPermissions]);
+
+  const can = useCallback(
+    (resource: string, action: string) => {
+      if (isSuperAdmin) return true;
+      return permissionSet.has(`${resource}:${action}`);
+    },
+    [permissionSet, isSuperAdmin]
+  );
+
+  // Button-level permissions
+  const canCreateUser = can("USER", "CREATE");
+  const canUpdateUser = can("USER", "UPDATE");
+  const canAssignPermissions = can("USER", "ASSIGN_PERMISSIONS");
+
+  // ===== Users list =====
   const { usersList, loading } = useSelector((state: any) => state.users);
   const apiUsers: User[] = Array.isArray(usersList) ? usersList : [];
 
-  // Local accumulated list (used for infinite scroll)
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
@@ -102,7 +153,6 @@ const UsersScreen = () => {
 
   // ----- Fetch first page whenever filters change -----
   useEffect(() => {
-    // Filters changed → reset everything
     filtersSignatureRef.current = filtersSignature;
     appendedPagesRef.current = new Set([1]);
     currentPageRef.current = 1;
@@ -114,7 +164,6 @@ const UsersScreen = () => {
       if (isFetchingRef.current) return;
       isFetchingRef.current = true;
       try {
-        // Clear current list immediately so old page-1 data doesn't linger
         setAllUsers([]);
         await getUsersListApiCall(buildPayload(1), dispatch);
       } finally {
@@ -128,15 +177,12 @@ const UsersScreen = () => {
 
   // ----- Sync redux response into local list -----
   useEffect(() => {
-    // Only merge if the response matches the current filter signature
     const currentPage = currentPageRef.current;
 
     if (currentPage === 1) {
-      // First page → replace local list
       setAllUsers(apiUsers);
       setHasMore(apiUsers.length >= PAGE_SIZE);
     } else {
-      // Next page → append (dedupe by id)
       setAllUsers((prev) => {
         const existingIds = new Set(prev.map((u) => u.id));
         const fresh = apiUsers.filter((u) => !existingIds.has(u.id));
@@ -201,11 +247,13 @@ const UsersScreen = () => {
   }, [search, statusFilter, fromDate, toDate]);
 
   const handleEdit = (user: User) => {
+    if (!canUpdateUser) return;
     setSelected(user);
     setEditVisible(true);
   };
 
   const handlePermissions = (user: User) => {
+    if (!canAssignPermissions) return;
     setSelected(user);
     setPermVisible(true);
   };
@@ -258,6 +306,9 @@ const UsersScreen = () => {
 
     const status = (item.userStatus ?? item.status ?? "ACTIVE").toUpperCase();
     const isActive = status === "ACTIVE";
+
+    // Only show the action row if the user can do at least one of the actions
+    const showActionRow = canUpdateUser || canAssignPermissions;
 
     return (
       <View
@@ -314,41 +365,52 @@ const UsersScreen = () => {
           </View>
         </View>
 
-        <View style={[styles.actionRow, { borderTopColor: colors.border }]}>
-          <TouchableOpacity
-            style={styles.actionBtn}
-            activeOpacity={0.7}
-            onPress={() => handlePermissions(item)}
-          >
-            <Ionicons
-              name="key-outline"
-              size={16}
-              color={colors.buttonPrimary}
-            />
-            <Text style={[styles.actionText, { color: colors.text }]}>
-              Permissions
-            </Text>
-          </TouchableOpacity>
+        {showActionRow && (
+          <View style={[styles.actionRow, { borderTopColor: colors.border }]}>
+            {canAssignPermissions && (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.7}
+                onPress={() => handlePermissions(item)}
+              >
+                <Ionicons
+                  name="key-outline"
+                  size={16}
+                  color={colors.buttonPrimary}
+                />
+                <Text style={[styles.actionText, { color: colors.text }]}>
+                  Permissions
+                </Text>
+              </TouchableOpacity>
+            )}
 
-          <View
-            style={[styles.verticalDivider, { backgroundColor: colors.border }]}
-          />
+            {canAssignPermissions && canUpdateUser && (
+              <View
+                style={[
+                  styles.verticalDivider,
+                  { backgroundColor: colors.border },
+                ]}
+              />
+            )}
 
-          <TouchableOpacity
-            style={styles.actionBtn}
-            activeOpacity={0.7}
-            onPress={() => handleEdit(item)}
-          >
-            <Ionicons
-              name="create-outline"
-              size={16}
-              color={colors.buttonPrimary}
-            />
-            <Text style={[styles.actionText, { color: colors.text }]}>
-              Edit
-            </Text>
-          </TouchableOpacity>
-        </View>
+            {canUpdateUser && (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.7}
+                onPress={() => handleEdit(item)}
+              >
+                <Ionicons
+                  name="create-outline"
+                  size={16}
+                  color={colors.buttonPrimary}
+                />
+                <Text style={[styles.actionText, { color: colors.text }]}>
+                  Edit
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
     );
   };
@@ -369,10 +431,11 @@ const UsersScreen = () => {
 
   return (
     <LinearGradient
-     colors={[colors.backgroundTop , colors.backgroundBottom]}
+      colors={[colors.backgroundTop, colors.backgroundBottom]}
       start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }} 
-       style={[styles.container, { backgroundColor: colors.background }]}>
+      end={{ x: 1, y: 1 }}
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <HeaderSection title="Users" />
 
       {/* Filter Bar */}
@@ -624,43 +687,54 @@ const UsersScreen = () => {
         />
       )}
 
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => setAddVisible(true)}
-        style={[
-          styles.fab,
-          {
-            backgroundColor: colors.buttonPrimary,
-            bottom: insets.bottom + 24,
-          },
-        ]}
-      >
-        <Ionicons name="add" size={26} color="#FFFFFF" />
-      </TouchableOpacity>
+      {/* FAB — only if USER:CREATE */}
+      {canCreateUser && (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setAddVisible(true)}
+          style={[
+            styles.fab,
+            {
+              backgroundColor: colors.buttonPrimary,
+              bottom: insets.bottom + 24,
+            },
+          ]}
+        >
+          <Ionicons name="add" size={26} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
 
-      <AddUserModal
-        visible={addVisible}
-        onClose={() => setAddVisible(false)}
-        onSuccess={refreshFirstPage}
-      />
-      <EditUserModal
-        visible={editVisible}
-        user={selected}
-        onClose={() => {
-          setEditVisible(false);
-          setSelected(null);
-        }}
-        onSuccess={refreshFirstPage}
-      />
-      <UserPermissionModal
-        visible={permVisible}
-        user={selected}
-        onClose={() => {
-          setPermVisible(false);
-          setSelected(null);
-        }}
-        onSuccess={refreshFirstPage}
-      />
+      {canCreateUser && (
+        <AddUserModal
+          visible={addVisible}
+          onClose={() => setAddVisible(false)}
+          onSuccess={refreshFirstPage}
+        />
+      )}
+
+      {canUpdateUser && (
+        <EditUserModal
+          visible={editVisible}
+          user={selected}
+          onClose={() => {
+            setEditVisible(false);
+            setSelected(null);
+          }}
+          onSuccess={refreshFirstPage}
+        />
+      )}
+
+      {canAssignPermissions && (
+        <UserPermissionModal
+          visible={permVisible}
+          user={selected}
+          onClose={() => {
+            setPermVisible(false);
+            setSelected(null);
+          }}
+          onSuccess={refreshFirstPage}
+        />
+      )}
 
       <FullScreenLoader loading={loading && allUsers.length === 0} />
     </LinearGradient>
@@ -679,7 +753,6 @@ const styles = StyleSheet.create({
   },
   emptyText: { fontSize: 13, fontWeight: "500" },
 
-  // Filter bar
   filterBar: {
     paddingHorizontal: 16,
     paddingTop: 4,
@@ -732,7 +805,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  // Date filters
   dateRow: {
     flexDirection: "row",
     gap: 10,
@@ -807,7 +879,6 @@ const styles = StyleSheet.create({
   actionText: { fontSize: 12.5, fontWeight: "600" },
   verticalDivider: { width: StyleSheet.hairlineWidth, height: 20 },
 
-  // Footer loader
   footerLoader: {
     paddingVertical: 20,
     alignItems: "center",

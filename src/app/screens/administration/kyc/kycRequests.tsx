@@ -82,6 +82,20 @@ export type KycListItem = {
   documents: KycDocument[];
 };
 
+type PermissionEntry = {
+  id?: string;
+  resource: string;
+  action: string;
+  source?: string;
+  effect?: string;
+};
+
+type PermissionsPayload = {
+  isSuperAdmin?: boolean;
+  role?: PermissionEntry[];
+  user?: PermissionEntry[];
+};
+
 type FilterStatus = "ALL" | "PENDING" | "VERIFIED" | "REJECTED";
 
 const FILTERS: FilterStatus[] = ["ALL", "PENDING", "VERIFIED", "REJECTED"];
@@ -124,6 +138,42 @@ const KycRequestsScreen = () => {
     (state: any) => state?.profileKyc,
   );
 
+  /* ===== Permissions ===== */
+  const { user: authUser } = useSelector((state: any) => state?.auth);
+
+  const permissionsPayload: PermissionsPayload | undefined =
+    authUser?.permissions ?? authUser?.data?.permissions;
+
+  const isSuperAdmin = permissionsPayload?.isSuperAdmin === true;
+  const userPermissions: PermissionEntry[] = permissionsPayload?.user ?? [];
+
+  const permissionSet = useMemo(() => {
+    return new Set(
+      userPermissions
+        .filter(
+          (p) =>
+            p &&
+            typeof p.resource === "string" &&
+            typeof p.action === "string" &&
+            (p.effect == null || p.effect === "ALLOW"),
+        )
+        .map((p) => `${p.resource.trim()}:${p.action.trim()}`),
+    );
+  }, [userPermissions]);
+
+  const can = useCallback(
+    (resource: string, action: string) => {
+      if (isSuperAdmin) return true;
+      return permissionSet.has(`${resource}:${action}`);
+    },
+    [permissionSet, isSuperAdmin],
+  );
+
+  // KYC action permissions
+  const canReadKyc = can("KYC", "READ");
+  const canApproveKyc = can("KYC", "APPROVE");
+  const canRejectKyc = can("KYC", "REJECT");
+
   /* ---------------- Filter state ---------------- */
   const [status, setStatus] = useState<FilterStatus>("ALL");
   const [search, setSearch] = useState("");
@@ -147,7 +197,7 @@ const KycRequestsScreen = () => {
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
 
-  const cardBg = colors.card
+  const cardBg = colors.card;
   const mutedBg = isDark ? "#1A1D2A" : "#F8FAFC";
   const borderColor = colors.border;
   const brandPrimary = isDark ? "#7C6BFF" : "#4F46E5";
@@ -172,6 +222,8 @@ const KycRequestsScreen = () => {
       fromDate: Date | null;
       toDate: Date | null;
     }>) => {
+      if (!canReadKyc) return; // no access → skip network
+
       const s = override?.status ?? status;
       const q = override?.search ?? debouncedSearch;
       const f = override?.fromDate ?? fromDate;
@@ -186,7 +238,7 @@ const KycRequestsScreen = () => {
       };
       await getPendingKycListApiCall(payload, dispatch);
     },
-    [dispatch, status, debouncedSearch, fromDate, toDate],
+    [dispatch, status, debouncedSearch, fromDate, toDate, canReadKyc],
   );
 
   useEffect(() => {
@@ -194,6 +246,7 @@ const KycRequestsScreen = () => {
   }, [status, debouncedSearch, fromDate, toDate, fetchData]);
 
   const onRefresh = async () => {
+    if (!canReadKyc) return;
     setRefreshing(true);
     await fetchData();
     setRefreshing(false);
@@ -201,11 +254,11 @@ const KycRequestsScreen = () => {
 
   /* ---------------- APPROVE — payload: { approvalNotes: "", kycId } ---------------- */
   const handleApprove = async (kyc: KycListItem) => {
+    if (!canApproveKyc) return;
     const payload = {
       approvalNotes: "",
       kycId: kyc.id,
     };
-    console.log("Approve payload →", payload);
     await updateProfileKycStatusApiCall(payload, "approve", dispatch);
     closeAllModals();
     await fetchData();
@@ -213,12 +266,11 @@ const KycRequestsScreen = () => {
 
   /* ---------------- REJECT — payload: { approvalNotes: <reason>, kycId } ---------------- */
   const handleRejectSubmit = async (reason: string) => {
-    if (!rejectKyc) return;
+    if (!rejectKyc || !canRejectKyc) return;
     const payload = {
       approvalNotes: reason,
       kycId: rejectKyc.id,
     };
-    console.log("Reject payload →", payload);
     await updateProfileKycStatusApiCall(payload, "rejected", dispatch);
     closeAllModals();
     await fetchData();
@@ -231,6 +283,19 @@ const KycRequestsScreen = () => {
     setMenuKyc(null);
     setRejectVisible(false);
     setRejectKyc(null);
+  };
+
+  const openMenu = (kyc: KycListItem) => {
+    // Only open the sheet if there's at least one action available
+    if (!canReadKyc && !canApproveKyc && !canRejectKyc) return;
+    setMenuKyc(kyc);
+    setMenuVisible(true);
+  };
+
+  const openDetails = (kyc: KycListItem) => {
+    if (!canReadKyc) return;
+    setSelectedKyc(kyc);
+    setDetailsVisible(true);
   };
 
   /* ---------------- Filter helpers ---------------- */
@@ -265,17 +330,19 @@ const KycRequestsScreen = () => {
     const meta = STATUS_META[item.status] ?? STATUS_META.PENDING;
     const docsCount = item.documents?.length ?? 0;
 
+    // Show the 3-dot menu only if the user has at least one action
+    const showDotMenu = canReadKyc || canApproveKyc || canRejectKyc;
+
     return (
       <TouchableOpacity
         activeOpacity={0.8}
         style={[styles.card, { backgroundColor: cardBg, borderColor }]}
-        onPress={() => {
-          setSelectedKyc(item);
-          setDetailsVisible(true);
-        }}
+        onPress={() => openDetails(item)}
       >
         <View style={styles.cardTop}>
-          <View style={[styles.avatar, { backgroundColor: `${brandPrimary}20` }]}>
+          <View
+            style={[styles.avatar, { backgroundColor: `${brandPrimary}20` }]}
+          >
             <Text style={[styles.avatarText, { color: brandPrimary }]}>
               {item.user?.firstName?.[0]?.toUpperCase() ?? "?"}
               {item.user?.lastName?.[0]?.toUpperCase() ?? ""}
@@ -283,7 +350,10 @@ const KycRequestsScreen = () => {
           </View>
 
           <View style={{ flex: 1 }}>
-            <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
+            <Text
+              style={[styles.name, { color: colors.text }]}
+              numberOfLines={1}
+            >
               {item.user?.firstName} {item.user?.lastName}
             </Text>
             <Text
@@ -301,28 +371,31 @@ const KycRequestsScreen = () => {
             </Text>
           </View>
 
-          {/* 3-dot button — always shown */}
-          <TouchableOpacity
-            hitSlop={10}
-            onPress={() => {
-              setMenuKyc(item);
-              setMenuVisible(true);
-            }}
-            style={styles.dotBtn}
-          >
-            <Ionicons
-              name="ellipsis-vertical"
-              size={18}
-              color={colors.textSecondary}
-            />
-          </TouchableOpacity>
+          {/* 3-dot button — only if at least one action available */}
+          {showDotMenu && (
+            <TouchableOpacity
+              hitSlop={10}
+              onPress={() => openMenu(item)}
+              style={styles.dotBtn}
+            >
+              <Ionicons
+                name="ellipsis-vertical"
+                size={18}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={[styles.divider, { backgroundColor: borderColor }]} />
 
         <View style={styles.cardBottom}>
           <View style={styles.metaItem}>
-            <Ionicons name="call-outline" size={12} color={colors.textSecondary} />
+            <Ionicons
+              name="call-outline"
+              size={12}
+              color={colors.textSecondary}
+            />
             <Text style={[styles.metaText, { color: colors.textSecondary }]}>
               {item.user?.mobileNumber}
             </Text>
@@ -355,19 +428,54 @@ const KycRequestsScreen = () => {
     );
   };
 
-  const list: KycListItem[] = Array.isArray(pendingKycList) ? pendingKycList : [];
+  const list: KycListItem[] = Array.isArray(pendingKycList)
+    ? pendingKycList
+    : [];
+
+  /* ---------------- No permission → "no access" view ---------------- */
+  if (!canReadKyc) {
+    return (
+      <LinearGradient
+        colors={[colors.backgroundTop, colors.backgroundBottom]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
+        <HeaderSection title="KYC Requests" />
+        <View style={styles.center}>
+          <Ionicons
+            name="lock-closed-outline"
+            size={48}
+            color={colors.textSecondary}
+          />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            No access
+          </Text>
+          <Text style={[styles.emptySub, { color: colors.textSecondary }]}>
+            You don't have permission to view KYC requests.
+          </Text>
+        </View>
+      </LinearGradient>
+    );
+  }
 
   return (
     <LinearGradient
-      colors={[colors.backgroundTop , colors.backgroundBottom]}
+      colors={[colors.backgroundTop, colors.backgroundBottom]}
       start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }} 
-       style={[styles.container, { backgroundColor: colors.background }]}>
+      end={{ x: 1, y: 1 }}
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <HeaderSection title="KYC Requests" />
 
       {/* Search */}
       <View style={styles.searchWrap}>
-        <View style={[styles.searchBar, { backgroundColor: mutedBg, borderColor }]}>
+        <View
+          style={[
+            styles.searchBar,
+            { backgroundColor: mutedBg, borderColor },
+          ]}
+        >
           <Ionicons name="search" size={16} color={colors.textSecondary} />
           <TextInput
             value={search}
@@ -381,7 +489,11 @@ const KycRequestsScreen = () => {
           />
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch("")} hitSlop={8}>
-              <Ionicons name="close-circle" size={16} color={colors.textSecondary} />
+              <Ionicons
+                name="close-circle"
+                size={16}
+                color={colors.textSecondary}
+              />
             </TouchableOpacity>
           )}
         </View>
@@ -430,13 +542,20 @@ const KycRequestsScreen = () => {
             <Text style={[styles.dateLabel, { color: colors.textSecondary }]}>
               FROM
             </Text>
-            <Text style={[styles.dateValue, { color: colors.text }]} numberOfLines={1}>
+            <Text
+              style={[styles.dateValue, { color: colors.text }]}
+              numberOfLines={1}
+            >
               {fromDate ? formatDisplayDate(fromDate) : "Any"}
             </Text>
           </View>
           {fromDate && (
             <TouchableOpacity onPress={() => setFromDate(null)} hitSlop={8}>
-              <Ionicons name="close-circle" size={14} color={colors.textSecondary} />
+              <Ionicons
+                name="close-circle"
+                size={14}
+                color={colors.textSecondary}
+              />
             </TouchableOpacity>
           )}
         </TouchableOpacity>
@@ -451,13 +570,20 @@ const KycRequestsScreen = () => {
             <Text style={[styles.dateLabel, { color: colors.textSecondary }]}>
               TO
             </Text>
-            <Text style={[styles.dateValue, { color: colors.text }]} numberOfLines={1}>
+            <Text
+              style={[styles.dateValue, { color: colors.text }]}
+              numberOfLines={1}
+            >
               {toDate ? formatDisplayDate(toDate) : "Any"}
             </Text>
           </View>
           {toDate && (
             <TouchableOpacity onPress={() => setToDate(null)} hitSlop={8}>
-              <Ionicons name="close-circle" size={14} color={colors.textSecondary} />
+              <Ionicons
+                name="close-circle"
+                size={14}
+                color={colors.textSecondary}
+              />
             </TouchableOpacity>
           )}
         </TouchableOpacity>
@@ -470,7 +596,9 @@ const KycRequestsScreen = () => {
             {list.length} result{list.length === 1 ? "" : "s"}
           </Text>
           <TouchableOpacity onPress={clearAllFilters} hitSlop={6}>
-            <Text style={[styles.clearText, { color: brandPrimary }]}>Clear all</Text>
+            <Text style={[styles.clearText, { color: brandPrimary }]}>
+              Clear all
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -551,100 +679,118 @@ const KycRequestsScreen = () => {
         </TouchableOpacity>
       )}
 
-      {/* 3-DOT ACTION MENU */}
-      <Modal
-        visible={menuVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          setMenuVisible(false);
-          setMenuKyc(null);
-        }}
-        statusBarTranslucent
-      >
-        <Pressable
-          style={styles.menuBackdrop}
-          onPress={() => {
+      {/* 3-DOT ACTION MENU — only if at least one action available */}
+      {(canReadKyc || canApproveKyc || canRejectKyc) && (
+        <Modal
+          visible={menuVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
             setMenuVisible(false);
             setMenuKyc(null);
           }}
+          statusBarTranslucent
         >
-          <View
-            style={[styles.menuSheet, { backgroundColor: cardBg, borderColor }]}
+          <Pressable
+            style={styles.menuBackdrop}
+            onPress={() => {
+              setMenuVisible(false);
+              setMenuKyc(null);
+            }}
           >
-            <Text style={[styles.menuHeader, { color: colors.textSecondary }]}>
-              {menuKyc?.user?.firstName} {menuKyc?.user?.lastName}
-            </Text>
-
-            {/* View Details */}
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setMenuVisible(false);
-                setSelectedKyc(menuKyc);
-                setDetailsVisible(true);
-                setMenuKyc(null);
-              }}
+            <View
+              style={[
+                styles.menuSheet,
+                { backgroundColor: cardBg, borderColor },
+              ]}
             >
-              <Ionicons name="eye-outline" size={18} color={brandPrimary} />
-              <Text style={[styles.menuItemText, { color: colors.text }]}>
-                View Details
+              <Text
+                style={[styles.menuHeader, { color: colors.textSecondary }]}
+              >
+                {menuKyc?.user?.firstName} {menuKyc?.user?.lastName}
               </Text>
-            </TouchableOpacity>
 
-            {/* Approve */}
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                if (menuKyc) handleApprove(menuKyc);
-              }}
-            >
-              <Ionicons name="checkmark-circle" size={18} color="#10B981" />
-              <Text style={[styles.menuItemText, { color: "#10B981" }]}>
-                Approve
-              </Text>
-            </TouchableOpacity>
+              {/* View Details — READ */}
+              {canReadKyc && (
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    if (!menuKyc) return;
+                    setMenuVisible(false);
+                    setSelectedKyc(menuKyc);
+                    setDetailsVisible(true);
+                    setMenuKyc(null);
+                  }}
+                >
+                  <Ionicons name="eye-outline" size={18} color={brandPrimary} />
+                  <Text style={[styles.menuItemText, { color: colors.text }]}>
+                    View Details
+                  </Text>
+                </TouchableOpacity>
+              )}
 
-            {/* Reject → opens reject modal */}
-            <TouchableOpacity
-              style={[styles.menuItem, { borderBottomWidth: 0 }]}
-              onPress={() => {
-                setRejectKyc(menuKyc);
-                setMenuVisible(false);
-                setMenuKyc(null);
-                setRejectVisible(true);
-              }}
-            >
-              <Ionicons name="close-circle" size={18} color="#EF4444" />
-              <Text style={[styles.menuItemText, { color: "#EF4444" }]}>
-                Reject
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </Pressable>
-      </Modal>
+              {/* Approve — APPROVE */}
+              {canApproveKyc && (
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    if (menuKyc) handleApprove(menuKyc);
+                  }}
+                >
+                  <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+                  <Text style={[styles.menuItemText, { color: "#10B981" }]}>
+                    Approve
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Reject → opens reject modal — REJECT */}
+              {canRejectKyc && (
+                <TouchableOpacity
+                  style={[styles.menuItem, { borderBottomWidth: 0 }]}
+                  onPress={() => {
+                    setRejectKyc(menuKyc);
+                    setMenuVisible(false);
+                    setMenuKyc(null);
+                    setRejectVisible(true);
+                  }}
+                >
+                  <Ionicons name="close-circle" size={18} color="#EF4444" />
+                  <Text style={[styles.menuItemText, { color: "#EF4444" }]}>
+                    Reject
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </Pressable>
+        </Modal>
+      )}
 
       {/* Details modal — READ ONLY */}
-      <ViewKycUserModal
-        visible={detailsVisible}
-        kyc={selectedKyc}
-        onClose={() => {
-          setDetailsVisible(false);
-          setSelectedKyc(null);
-        }}
-      />
+      {canReadKyc && (
+        <ViewKycUserModal
+          visible={detailsVisible}
+          kyc={selectedKyc}
+          onClose={() => {
+            setDetailsVisible(false);
+            setSelectedKyc(null);
+          }}
+        />
+      )}
 
-      {/* Reject modal — user types reason, passed as approvalNotes */}
-      <RejectKycModal
-        visible={rejectVisible}
-        kyc={rejectKyc}
-        loading={loading}
-        onClose={() => {
-          setRejectVisible(false);
-          setRejectKyc(null);
-        }}
-        onSubmit={handleRejectSubmit}
-      />
+      {/* Reject modal — REJECT only */}
+      {canRejectKyc && (
+        <RejectKycModal
+          visible={rejectVisible}
+          kyc={rejectKyc}
+          loading={loading}
+          onClose={() => {
+            setRejectVisible(false);
+            setRejectKyc(null);
+          }}
+          onSubmit={handleRejectSubmit}
+        />
+      )}
     </LinearGradient>
   );
 };
@@ -654,10 +800,20 @@ export default KycRequestsScreen;
 /* ---------------- Styles ---------------- */
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 32,
+  },
   loadingText: { marginTop: 12, fontSize: 13, fontWeight: "600" },
   emptyTitle: { fontSize: 16, fontWeight: "800", marginTop: 12 },
-  emptySub: { fontSize: 12.5, fontWeight: "500", marginTop: 4, textAlign: "center" },
+  emptySub: {
+    fontSize: 12.5,
+    fontWeight: "500",
+    marginTop: 4,
+    textAlign: "center",
+  },
 
   searchWrap: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 10 },
   searchBar: {
@@ -669,9 +825,19 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
   },
-  searchInput: { flex: 1, fontSize: 13.5, fontWeight: "600", paddingVertical: 0 },
+  searchInput: {
+    flex: 1,
+    fontSize: 13.5,
+    fontWeight: "600",
+    paddingVertical: 0,
+  },
 
-  filtersRow: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 10 },
+  filtersRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+  },
   filterChip: {
     paddingHorizontal: 14,
     paddingVertical: 7,
@@ -680,7 +846,12 @@ const styles = StyleSheet.create({
   },
   filterText: { fontSize: 12, fontWeight: "800", letterSpacing: 0.4 },
 
-  dateRow: { flexDirection: "row", gap: 10, paddingHorizontal: 16, paddingBottom: 12 },
+  dateRow: {
+    flexDirection: "row",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
   dateBtn: {
     flex: 1,
     flexDirection: "row",

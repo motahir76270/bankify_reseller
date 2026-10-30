@@ -11,7 +11,7 @@ import {
   useColorScheme,
   Modal,
 } from "react-native";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useDispatch, useSelector } from "react-redux";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +29,23 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 
 // ----------------------------------------------------------------
+// Types
+// ----------------------------------------------------------------
+type PermissionEntry = {
+  id?: string;
+  resource: string;
+  action: string;
+  source?: string;
+  effect?: string;
+};
+
+type PermissionsPayload = {
+  isSuperAdmin?: boolean;
+  role?: PermissionEntry[];
+  user?: PermissionEntry[];
+};
+
+// ----------------------------------------------------------------
 // Zod Schema
 // ----------------------------------------------------------------
 const smtpSchema = z.object({
@@ -38,7 +55,10 @@ const smtpSchema = z.object({
     .trim()
     .min(1, "SMTP port is required")
     .regex(/^\d+$/, "Port must be a number")
-    .refine((v) => Number(v) >= 1 && Number(v) <= 65535, "Port must be between 1-65535"),
+    .refine(
+      (v) => Number(v) >= 1 && Number(v) <= 65535,
+      "Port must be between 1-65535"
+    ),
   smtpUsername: z.string().trim().min(1, "Username is required"),
   smtpPassword: z.string().trim().min(1, "Password is required"),
   encryptionType: z.enum(["TLS", "SSL", "NONE"]),
@@ -77,6 +97,39 @@ const SMPTScreen = () => {
   const smtpData = useSelector((state: any) => state.smtp?.smtpData);
   const loading = useSelector((state: any) => state.smtp?.loading);
 
+  /* ===== Permissions ===== */
+  const { user: authUser } = useSelector((state: any) => state?.auth);
+
+  const permissionsPayload: PermissionsPayload | undefined =
+    authUser?.permissions ?? authUser?.data?.permissions;
+
+  const isSuperAdmin = permissionsPayload?.isSuperAdmin === true;
+  const userPermissions: PermissionEntry[] = permissionsPayload?.user ?? [];
+
+  const permissionSet = useMemo(() => {
+    return new Set(
+      userPermissions
+        .filter(
+          (p) =>
+            p &&
+            typeof p.resource === "string" &&
+            typeof p.action === "string" &&
+            (p.effect == null || p.effect === "ALLOW")
+        )
+        .map((p) => `${p.resource.trim()}:${p.action.trim()}`)
+    );
+  }, [userPermissions]);
+
+  const can = (resource: string, action: string) => {
+    if (isSuperAdmin) return true;
+    return permissionSet.has(`${resource}:${action}`);
+  };
+
+  // SMTP action permissions
+  const canReadSmtp = can("SMTP", "READ");
+  const canCreateSmtp = can("SMTP", "CREATE");
+  const canUpdateSmtp = can("SMTP", "UPDATE");
+
   const [modalVisible, setModalVisible] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
@@ -94,13 +147,15 @@ const SMPTScreen = () => {
     mode: "onBlur",
   });
 
-  // Fetch SMTP on mount
+  // Fetch SMTP on mount — only if the user can read
   useEffect(() => {
+    if (!canReadSmtp) return;
     getSMTPdataApiCall(dispatch);
-  }, [dispatch]);
+  }, [dispatch, canReadSmtp]);
 
   // Hydrate form whenever smtpData changes
   useEffect(() => {
+    if (!canReadSmtp) return;
     if (hasConfig) {
       reset({
         smtpHost: smtpData.smtpHost ?? "",
@@ -113,15 +168,17 @@ const SMPTScreen = () => {
       });
     } else {
       reset(emptyForm);
-      setModalVisible(true); // force add mode when nothing exists
+      // Only auto-open the add modal if the user can actually CREATE
+      if (canCreateSmtp) setModalVisible(true);
     }
-  }, [smtpData, hasConfig, reset]);
+  }, [smtpData, hasConfig, reset, canReadSmtp, canCreateSmtp]);
 
   // ----------------------------------------------------------------
   // Open modal (add or edit)
   // ----------------------------------------------------------------
   const openModal = () => {
     if (hasConfig) {
+      if (!canUpdateSmtp) return;
       reset({
         smtpHost: smtpData.smtpHost ?? "",
         smtpPort: String(smtpData.smtpPort ?? ""),
@@ -132,6 +189,7 @@ const SMPTScreen = () => {
         fromEmail: smtpData.fromEmail ?? "",
       });
     } else {
+      if (!canCreateSmtp) return;
       reset(emptyForm);
     }
     setShowPassword(false);
@@ -164,13 +222,16 @@ const SMPTScreen = () => {
       };
 
       if (hasConfig) {
-        // UPDATE
-        await updateSMTPdataApiCall(
-          { ...smtpData, ...payload },
-          dispatch,
-        );
+        if (!canUpdateSmtp) {
+          showError("Not allowed", "You don't have permission to update SMTP.");
+          return;
+        }
+        await updateSMTPdataApiCall({ ...smtpData, ...payload }, dispatch);
       } else {
-        // CREATE
+        if (!canCreateSmtp) {
+          showError("Not allowed", "You don't have permission to add SMTP.");
+          return;
+        }
         await createSMTPApiCall(payload, dispatch);
         await getSMTPdataApiCall(dispatch);
       }
@@ -182,6 +243,42 @@ const SMPTScreen = () => {
       showError("Error", e?.message ?? "Something went wrong");
     }
   };
+
+  // ----------------------------------------------------------------
+  // No permission → "no access" view
+  // ----------------------------------------------------------------
+  if (!canReadSmtp) {
+    return (
+      <LinearGradient
+        colors={[colors.backgroundTop, colors.backgroundBottom]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.container, { backgroundColor: colors.background }]}
+      >
+        <HeaderSection title="SMTP Setup" />
+        <View style={styles.center}>
+          <View
+            style={[
+              styles.emptyIcon,
+              { backgroundColor: colors.surfacePrimary },
+            ]}
+          >
+            <Ionicons
+              name="lock-closed-outline"
+              size={28}
+              color={colors.buttonPrimary}
+            />
+          </View>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            No Access
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+            You don't have permission to view SMTP configuration.
+          </Text>
+        </View>
+      </LinearGradient>
+    );
+  }
 
   // ----------------------------------------------------------------
   // Loading
@@ -208,7 +305,7 @@ const SMPTScreen = () => {
       keyboardType?: "default" | "numeric" | "email-address";
       secure?: boolean;
       autoCapitalize?: "none" | "sentences" | "words";
-    } = {},
+    } = {}
   ) => (
     <View style={styles.field}>
       <Text style={[styles.label, { color: colors.textMuted }]}>{label}</Text>
@@ -261,7 +358,7 @@ const SMPTScreen = () => {
   const renderViewRow = (
     label: string,
     value?: string | null,
-    isPassword = false,
+    isPassword = false
   ) => (
     <View style={[styles.viewRow, { borderBottomColor: colors.border }]}>
       <Text style={[styles.viewLabel, { color: colors.textMuted }]}>
@@ -277,12 +374,15 @@ const SMPTScreen = () => {
     </View>
   );
 
+  const canEdit = hasConfig ? canUpdateSmtp : canCreateSmtp;
+
   return (
     <LinearGradient
-      colors={[colors.backgroundTop , colors.backgroundBottom]}
+      colors={[colors.backgroundTop, colors.backgroundBottom]}
       start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }} 
-       style={[styles.container, { backgroundColor: colors.background }]}>
+      end={{ x: 1, y: 1 }}
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <HeaderSection title="SMTP Setup" />
 
       <ScrollView
@@ -316,16 +416,20 @@ const SMPTScreen = () => {
               <Text style={[styles.cardTitle, { color: colors.text }]}>
                 SMTP Configuration
               </Text>
-              <TouchableOpacity
-                onPress={openModal}
-                style={[
-                  styles.editBtn,
-                  { backgroundColor: colors.buttonPrimary },
-                ]}
-              >
-                <Ionicons name="create-outline" size={14} color="#fff" />
-                <Text style={styles.editBtnText}>Edit</Text>
-              </TouchableOpacity>
+
+              {/* Edit button — only with UPDATE */}
+              {canUpdateSmtp && (
+                <TouchableOpacity
+                  onPress={openModal}
+                  style={[
+                    styles.editBtn,
+                    { backgroundColor: colors.buttonPrimary },
+                  ]}
+                >
+                  <Ionicons name="create-outline" size={14} color="#fff" />
+                  <Text style={styles.editBtnText}>Edit</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {renderViewRow("SMTP Host", smtpData.smtpHost)}
@@ -363,200 +467,221 @@ const SMPTScreen = () => {
               No SMTP Configured
             </Text>
             <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-              Add your SMTP details to start sending emails.
+              {canCreateSmtp
+                ? "Add your SMTP details to start sending emails."
+                : "No SMTP configuration has been set up yet."}
             </Text>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={openModal}
-              style={[
-                styles.submitBtn,
-                { backgroundColor: colors.buttonPrimary, paddingHorizontal: 24 },
-              ]}
-            >
-              <Ionicons name="add-circle-outline" size={18} color="#fff" />
-              <Text style={styles.submitText}>Add SMTP Config</Text>
-            </TouchableOpacity>
+
+            {/* Add button — only with CREATE */}
+            {canCreateSmtp && (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={openModal}
+                style={[
+                  styles.submitBtn,
+                  {
+                    backgroundColor: colors.buttonPrimary,
+                    paddingHorizontal: 24,
+                  },
+                ]}
+              >
+                <Ionicons name="add-circle-outline" size={18} color="#fff" />
+                <Text style={styles.submitText}>Add SMTP Config</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </ScrollView>
 
       {/* ---------------- MODAL ---------------- */}
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={closeModal}
-      >
-        <View style={styles.modalOverlay}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.modalContainer}
-          >
-            <View
-              style={[
-                styles.modalContent,
-                { backgroundColor: colors.background },
-              ]}
+      {/* Only mount modal when the user can actually act on it */}
+      {canEdit && (
+        <Modal
+          visible={modalVisible}
+          animationType="slide"
+          transparent
+          onRequestClose={closeModal}
+        >
+          <View style={styles.modalOverlay}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              style={styles.modalContainer}
             >
-              {/* Header */}
               <View
                 style={[
-                  styles.modalHeader,
-                  { borderBottomColor: colors.border },
+                  styles.modalContent,
+                  { backgroundColor: colors.background },
                 ]}
               >
-                <View style={styles.modalHeaderLeft}>
-                  <View
-                    style={[
-                      styles.iconWrap,
-                      { backgroundColor: colors.surfacePrimary },
-                    ]}
-                  >
-                    <Ionicons
-                      name={hasConfig ? "create" : "add"}
-                      size={18}
-                      color={colors.buttonPrimary}
-                    />
-                  </View>
-                  <Text style={[styles.cardTitle, { color: colors.text }]}>
-                    {hasConfig ? "Edit SMTP Config" : "Add SMTP Config"}
-                  </Text>
-                </View>
-                <TouchableOpacity onPress={closeModal} hitSlop={10}>
-                  <Ionicons name="close" size={22} color={colors.textMuted} />
-                </TouchableOpacity>
-              </View>
-
-              {/* Scrollable Form */}
-              <ScrollView
-                contentContainerStyle={{
-                  padding: 16,
-                  paddingBottom: insets.bottom + 24,
-                }}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
-              >
-                {renderField("SMTP Host", "smtpHost", {
-                  placeholder: "smtp.example.com",
-                })}
-                {renderField("SMTP Port", "smtpPort", {
-                  placeholder: "465",
-                  keyboardType: "numeric",
-                })}
-                {renderField("Username", "smtpUsername", {
-                  placeholder: "your-smtp-username",
-                })}
-                {renderField("Password", "smtpPassword", {
-                  placeholder: "••••••••",
-                  secure: true,
-                })}
-
-                {/* Encryption chips */}
-                <View style={styles.field}>
-                  <Text style={[styles.label, { color: colors.textMuted }]}>
-                    Encryption
-                  </Text>
-                  <Controller
-                    control={control}
-                    name="encryptionType"
-                    render={({ field: { onChange, value } }) => (
-                      <View style={styles.chipRow}>
-                        {ENCRYPTIONS.map((e) => {
-                          const active = value === e;
-                          return (
-                            <TouchableOpacity
-                              key={e}
-                              activeOpacity={0.7}
-                              onPress={() => onChange(e)}
-                              style={[
-                                styles.chip,
-                                {
-                                  backgroundColor: active
-                                    ? colors.buttonPrimary
-                                    : colors.surfaceTertiary,
-                                  borderColor: active
-                                    ? colors.buttonPrimary
-                                    : colors.border,
-                                },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.chipText,
-                                  { color: active ? "#FFFFFF" : colors.text },
-                                ]}
-                              >
-                                {e}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    )}
-                  />
-                </View>
-
-                {renderField("From Name", "fromName", {
-                  placeholder: "Your Company Name",
-                  autoCapitalize: "words",
-                })}
-                {renderField("From Email", "fromEmail", {
-                  placeholder: "noreply@example.com",
-                  keyboardType: "email-address",
-                })}
-
-                {/* Submit */}
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  disabled={isSubmitting || loading}
-                  onPress={handleSubmit(onSubmit)}
+                {/* Header */}
+                <View
                   style={[
-                    styles.submitBtn,
-                    {
-                      backgroundColor: colors.buttonPrimary,
-                      opacity: isSubmitting || loading ? 0.6 : 1,
-                    },
+                    styles.modalHeader,
+                    { borderBottomColor: colors.border },
                   ]}
                 >
-                  {isSubmitting || loading ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name={
-                          hasConfig
-                            ? "checkmark-circle-outline"
-                            : "add-circle-outline"
-                        }
-                        size={18}
-                        color="#fff"
-                      />
-                      <Text style={styles.submitText}>
-                        {hasConfig ? "Update Config" : "Save Config"}
-                      </Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                {/* Cancel */}
-                {hasConfig && (
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    onPress={closeModal}
-                    style={styles.cancelBtn}
-                  >
-                    <Text
-                      style={[styles.cancelText, { color: colors.textMuted }]}
+                  <View style={styles.modalHeaderLeft}>
+                    <View
+                      style={[
+                        styles.iconWrap,
+                        { backgroundColor: colors.surfacePrimary },
+                      ]}
                     >
-                      Cancel
+                      <Ionicons
+                        name={hasConfig ? "create" : "add"}
+                        size={18}
+                        color={colors.buttonPrimary}
+                      />
+                    </View>
+                    <Text style={[styles.cardTitle, { color: colors.text }]}>
+                      {hasConfig ? "Edit SMTP Config" : "Add SMTP Config"}
                     </Text>
+                  </View>
+                  <TouchableOpacity onPress={closeModal} hitSlop={10}>
+                    <Ionicons
+                      name="close"
+                      size={22}
+                      color={colors.textMuted}
+                    />
                   </TouchableOpacity>
-                )}
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
-        </View>
-      </Modal>
+                </View>
+
+                {/* Scrollable Form */}
+                <ScrollView
+                  contentContainerStyle={{
+                    padding: 16,
+                    paddingBottom: insets.bottom + 24,
+                  }}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  {renderField("SMTP Host", "smtpHost", {
+                    placeholder: "smtp.example.com",
+                  })}
+                  {renderField("SMTP Port", "smtpPort", {
+                    placeholder: "465",
+                    keyboardType: "numeric",
+                  })}
+                  {renderField("Username", "smtpUsername", {
+                    placeholder: "your-smtp-username",
+                  })}
+                  {renderField("Password", "smtpPassword", {
+                    placeholder: "••••••••",
+                    secure: true,
+                  })}
+
+                  {/* Encryption chips */}
+                  <View style={styles.field}>
+                    <Text style={[styles.label, { color: colors.textMuted }]}>
+                      Encryption
+                    </Text>
+                    <Controller
+                      control={control}
+                      name="encryptionType"
+                      render={({ field: { onChange, value } }) => (
+                        <View style={styles.chipRow}>
+                          {ENCRYPTIONS.map((e) => {
+                            const active = value === e;
+                            return (
+                              <TouchableOpacity
+                                key={e}
+                                activeOpacity={0.7}
+                                onPress={() => onChange(e)}
+                                style={[
+                                  styles.chip,
+                                  {
+                                    backgroundColor: active
+                                      ? colors.buttonPrimary
+                                      : colors.surfaceTertiary,
+                                    borderColor: active
+                                      ? colors.buttonPrimary
+                                      : colors.border,
+                                  },
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.chipText,
+                                    {
+                                      color: active ? "#FFFFFF" : colors.text,
+                                    },
+                                  ]}
+                                >
+                                  {e}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      )}
+                    />
+                  </View>
+
+                  {renderField("From Name", "fromName", {
+                    placeholder: "Your Company Name",
+                    autoCapitalize: "words",
+                  })}
+                  {renderField("From Email", "fromEmail", {
+                    placeholder: "noreply@example.com",
+                    keyboardType: "email-address",
+                  })}
+
+                  {/* Submit */}
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    disabled={isSubmitting || loading}
+                    onPress={handleSubmit(onSubmit)}
+                    style={[
+                      styles.submitBtn,
+                      {
+                        backgroundColor: colors.buttonPrimary,
+                        opacity: isSubmitting || loading ? 0.6 : 1,
+                      },
+                    ]}
+                  >
+                    {isSubmitting || loading ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons
+                          name={
+                            hasConfig
+                              ? "checkmark-circle-outline"
+                              : "add-circle-outline"
+                          }
+                          size={18}
+                          color="#fff"
+                        />
+                        <Text style={styles.submitText}>
+                          {hasConfig ? "Update Config" : "Save Config"}
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Cancel */}
+                  {hasConfig && (
+                    <TouchableOpacity
+                      activeOpacity={0.7}
+                      onPress={closeModal}
+                      style={styles.cancelBtn}
+                    >
+                      <Text
+                        style={[
+                          styles.cancelText,
+                          { color: colors.textMuted },
+                        ]}
+                      >
+                        Cancel
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        </Modal>
+      )}
     </LinearGradient>
   );
 };
@@ -605,7 +730,6 @@ const styles = StyleSheet.create({
   },
   editBtnText: { color: "#fff", fontSize: 12, fontWeight: "700" },
 
-  // View rows
   viewRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -627,7 +751,6 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
 
-  // Empty state
   emptyCard: {
     borderRadius: 14,
     borderWidth: 1,
@@ -650,7 +773,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // Form
   field: { marginBottom: 12 },
   label: {
     fontSize: 11,
@@ -709,7 +831,6 @@ const styles = StyleSheet.create({
   },
   cancelText: { fontSize: 13, fontWeight: "600" },
 
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",

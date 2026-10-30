@@ -6,7 +6,7 @@ import { Colors } from "@/constants/theme";
 import { getRolesDataApiCall } from "@/redux/slices/userMangementSlice";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -42,6 +42,20 @@ export type Role = {
   permissions?: Permission[];
 };
 
+type PermissionEntry = {
+  id?: string;
+  resource: string;
+  action: string;
+  source?: string;
+  effect?: string;
+};
+
+type PermissionsPayload = {
+  isSuperAdmin?: boolean;
+  role?: PermissionEntry[];
+  user?: PermissionEntry[];
+};
+
 const RoleScreen = () => {
   const dispatch = useDispatch();
   const scheme = useColorScheme();
@@ -49,6 +63,43 @@ const RoleScreen = () => {
   const colors = Colors[isDark ? "dark" : "light"];
   const insets = useSafeAreaInsets();
 
+  // ===== Auth: permissions =====
+  const { user: authUser } = useSelector((state: any) => state.auth);
+
+  const permissionsPayload: PermissionsPayload | undefined =
+    authUser?.permissions ?? authUser?.data?.permissions;
+
+  const isSuperAdmin = permissionsPayload?.isSuperAdmin === true;
+  const userPermissions: PermissionEntry[] = permissionsPayload?.user ?? [];
+
+  const permissionSet = useMemo(() => {
+    return new Set(
+      userPermissions
+        .filter(
+          (p) =>
+            p &&
+            typeof p.resource === "string" &&
+            typeof p.action === "string" &&
+            (p.effect == null || p.effect === "ALLOW")
+        )
+        .map((p) => `${p.resource.trim()}:${p.action.trim()}`)
+    );
+  }, [userPermissions]);
+
+  const can = useCallback(
+    (resource: string, action: string) => {
+      if (isSuperAdmin) return true;
+      return permissionSet.has(`${resource}:${action}`);
+    },
+    [permissionSet, isSuperAdmin]
+  );
+
+  // Button-level permissions
+  const canCreateRole = can("ROLE", "CREATE");
+  const canUpdateRole = can("ROLE", "UPDATE");
+  const canAssignRolePermissions = can("ROLE", "ASSIGN_PERMISSIONS");
+
+  // ===== Roles list =====
   const { rolesData, loading } = useSelector((state: any) => state.users);
 
   /* Modal state */
@@ -57,128 +108,158 @@ const RoleScreen = () => {
   const [permVisible, setPermVisible] = useState(false);
   const [selectedRole, setSelectedRole] = useState<Role | null>(null);
 
-  const fetchRoles = async () => {
+  const fetchRoles = useCallback(async () => {
     await getRolesDataApiCall(dispatch);
-  };
+  }, [dispatch]);
 
   useEffect(() => {
     fetchRoles();
-  }, []);
+  }, [fetchRoles]);
 
   const handleEdit = (role: Role) => {
+    if (!canUpdateRole) return;
     setSelectedRole(role);
     setEditVisible(true);
   };
 
   const handlePermissions = (role: Role) => {
+    if (!canAssignRolePermissions) return;
     setSelectedRole(role);
     setPermVisible(true);
   };
 
-  const renderRole = ({ item }: { item: Role }) => (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-        },
-      ]}
-    >
-      <View style={styles.cardTop}>
-        <View
-          style={[styles.roleAvatar, { backgroundColor: colors.surfacePrimary }]}
-        >
-          <Ionicons
-            name="shield-outline"
-            size={20}
-            color={colors.buttonPrimary}
-          />
-        </View>
+  const renderRole = ({ item }: { item: Role }) => {
+    // Show action row only if at least one action is allowed
+    const showActionRow = canUpdateRole || canAssignRolePermissions;
 
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.roleName, { color: colors.text }]}>
-            {item.roleName || "Unnamed Role"}
-          </Text>
-          <Text style={[styles.roleCode, { color: colors.textMuted }]}>
-            {item.roleCode}
-          </Text>
-        </View>
-
-        {item.isSystem && (
+    return (
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+          },
+        ]}
+      >
+        <View style={styles.cardTop}>
           <View
-            style={[styles.systemPill, { backgroundColor: colors.surfacePrimary }]}
+            style={[
+              styles.roleAvatar,
+              { backgroundColor: colors.surfacePrimary },
+            ]}
           >
-            <Text
-              style={[styles.systemPillText, { color: colors.buttonPrimary }]}
-            >
-              SYSTEM
+            <Ionicons
+              name="shield-outline"
+              size={20}
+              color={colors.buttonPrimary}
+            />
+          </View>
+
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.roleName, { color: colors.text }]}>
+              {item.roleName || "Unnamed Role"}
             </Text>
+            <Text style={[styles.roleCode, { color: colors.textMuted }]}>
+              {item.roleCode}
+            </Text>
+          </View>
+
+          {item.isSystem && (
+            <View
+              style={[
+                styles.systemPill,
+                { backgroundColor: colors.surfacePrimary },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.systemPillText,
+                  { color: colors.buttonPrimary },
+                ]}
+              >
+                SYSTEM
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.metaRow}>
+          <View style={styles.metaItem}>
+            <Text style={[styles.metaLabel, { color: colors.textMuted }]}>
+              Level
+            </Text>
+            <Text style={[styles.metaValue, { color: colors.text }]}>
+              {item.roleLevel ?? "-"}
+            </Text>
+          </View>
+          <View style={styles.metaItem}>
+            <Text style={[styles.metaLabel, { color: colors.textMuted }]}>
+              Permissions
+            </Text>
+            <Text style={[styles.metaValue, { color: colors.text }]}>
+              {item.permissions?.length ?? 0}
+            </Text>
+          </View>
+        </View>
+
+        {showActionRow && (
+          <View style={[styles.actionRow, { borderTopColor: colors.border }]}>
+            {canAssignRolePermissions && (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => handlePermissions(item)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="key-outline"
+                  size={16}
+                  color={colors.buttonPrimary}
+                />
+                <Text style={[styles.actionText, { color: colors.text }]}>
+                  Permissions
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {canAssignRolePermissions && canUpdateRole && (
+              <View
+                style={[
+                  styles.verticalDivider,
+                  { backgroundColor: colors.border },
+                ]}
+              />
+            )}
+
+            {canUpdateRole && (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => handleEdit(item)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="create-outline"
+                  size={16}
+                  color={colors.buttonPrimary}
+                />
+                <Text style={[styles.actionText, { color: colors.text }]}>
+                  Edit
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>
-
-      <View style={styles.metaRow}>
-        <View style={styles.metaItem}>
-          <Text style={[styles.metaLabel, { color: colors.textMuted }]}>
-            Level
-          </Text>
-          <Text style={[styles.metaValue, { color: colors.text }]}>
-            {item.roleLevel ?? "-"}
-          </Text>
-        </View>
-        <View style={styles.metaItem}>
-          <Text style={[styles.metaLabel, { color: colors.textMuted }]}>
-            Permissions
-          </Text>
-          <Text style={[styles.metaValue, { color: colors.text }]}>
-            {item.permissions?.length ?? 0}
-          </Text>
-        </View>
-      </View>
-
-      <View style={[styles.actionRow, { borderTopColor: colors.border }]}>
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={() => handlePermissions(item)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name="key-outline"
-            size={16}
-            color={colors.buttonPrimary}
-          />
-          <Text style={[styles.actionText, { color: colors.text }]}>
-            Permissions
-          </Text>
-        </TouchableOpacity>
-
-        <View
-          style={[styles.verticalDivider, { backgroundColor: colors.border }]}
-        />
-
-        <TouchableOpacity
-          style={styles.actionBtn}
-          onPress={() => handleEdit(item)}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name="create-outline"
-            size={16}
-            color={colors.buttonPrimary}
-          />
-          <Text style={[styles.actionText, { color: colors.text }]}>Edit</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <LinearGradient
-     colors={[colors.backgroundTop , colors.backgroundBottom]}
+      colors={[colors.backgroundTop, colors.backgroundBottom]}
       start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }} 
-       style={[styles.container, { backgroundColor: colors.background }]}>
+      end={{ x: 1, y: 1 }}
+      style={[styles.container, { backgroundColor: colors.background }]}
+    >
       <HeaderSection title="Roles" />
 
       {loading && !rolesData?.length ? (
@@ -211,45 +292,55 @@ const RoleScreen = () => {
         />
       )}
 
-      {/* FAB — Add Role */}
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={() => setAddVisible(true)}
-        style={[
-          styles.fab,
-          {
-            backgroundColor: colors.buttonPrimary,
-            bottom: insets.bottom + 24,
-          },
-        ]}
-      >
-        <Ionicons name="add" size={26} color="#FFFFFF" />
-      </TouchableOpacity>
+      {/* FAB — Add Role (only with ROLE:CREATE) */}
+      {canCreateRole && (
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => setAddVisible(true)}
+          style={[
+            styles.fab,
+            {
+              backgroundColor: colors.buttonPrimary,
+              bottom: insets.bottom + 24,
+            },
+          ]}
+        >
+          <Ionicons name="add" size={26} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
 
-      {/* Modals */}
-      <AddRoleModal
-        visible={addVisible}
-        onClose={() => setAddVisible(false)}
-        onSuccess={fetchRoles}
-      />
-      <EditRoleModal
-        visible={editVisible}
-        role={selectedRole}
-        onClose={() => {
-          setEditVisible(false);
-          setSelectedRole(null);
-        }}
-        onSuccess={fetchRoles}
-      />
-      <RolePermissionModal
-        visible={permVisible}
-        role={selectedRole}
-        onClose={() => {
-          setPermVisible(false);
-          setSelectedRole(null);
-        }}
-        onSuccess={fetchRoles}
-      />
+      {/* Modals — only mount when permitted */}
+      {canCreateRole && (
+        <AddRoleModal
+          visible={addVisible}
+          onClose={() => setAddVisible(false)}
+          onSuccess={fetchRoles}
+        />
+      )}
+
+      {canUpdateRole && (
+        <EditRoleModal
+          visible={editVisible}
+          role={selectedRole}
+          onClose={() => {
+            setEditVisible(false);
+            setSelectedRole(null);
+          }}
+          onSuccess={fetchRoles}
+        />
+      )}
+
+      {canAssignRolePermissions && (
+        <RolePermissionModal
+          visible={permVisible}
+          role={selectedRole}
+          onClose={() => {
+            setPermVisible(false);
+            setSelectedRole(null);
+          }}
+          onSuccess={fetchRoles}
+        />
+      )}
     </LinearGradient>
   );
 };
