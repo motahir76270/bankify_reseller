@@ -117,7 +117,7 @@ export const getMeApiCall = async (dispatch) => {
       dispatch(setUser(data?.data))
       return data?.data;
      }else{
-      showError("Failed", data?.message)
+      // showError("Failed", data?.message)
      }
    } catch (error) {
     showError("Faled", error?.message || "server not respond")

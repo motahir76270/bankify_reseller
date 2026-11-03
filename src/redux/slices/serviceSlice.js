@@ -49,8 +49,9 @@ export const getDashboardDataApiCall = async (dispatch) => {
       dispatch(setDashBoard(data?.data))
       return data?.data;
      }else{
-      showError("Failed", data?.message)
+      // showError("Failed", data?.message)
      }
+     return data;
    } catch (error) {
       showError("Faled", error?.message || "server not respond")
    }finally{
@@ -135,7 +136,6 @@ export const verifyPanApiCall  = async (payload,dispatch) => {
    }
 };
 
-
 export const digilockerInitiateApiCall  = async (payload,dispatch) => {
   try {
     // dashboard?fromDate=2026-10-08&toDate=
@@ -189,6 +189,8 @@ export const verifyDigilockerCallbackApiCall  = async (payload,dispatch) => {
      dispatch(setLoading(false));
    }
 };
+
+
 
 
 

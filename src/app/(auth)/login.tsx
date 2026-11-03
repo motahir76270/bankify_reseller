@@ -1,5 +1,3 @@
-
-
 import { Colors } from "@/constants/theme";
 import { onLocation } from "@/hooks/use-location";
 import { FullScreenLoader } from "@/hooks/use-screensLoder";
@@ -86,7 +84,7 @@ export default function LoginScreen() {
   const { loading, location } = useSelector((state: any) => state.auth);
   const [identifierFocused, setidentifierFocused] = useState(false);
   const [passwordFocused, setPasswordFocused] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
+
 
   // console.log(location)
   const dispatch = useDispatch();
