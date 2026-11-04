@@ -308,7 +308,7 @@ const SettingsScreen = () => {
         title: "Administration",
         data: ADMINISTRATION_ITEMS,
       },
-      { id: "privacy", title: "Privacy & Help", data: PRIVACY_ITEMS },
+      // { id: "privacy", title: "Privacy & Help", data: PRIVACY_ITEMS },
       {
         id: "configuration",
         title: "Configuration",

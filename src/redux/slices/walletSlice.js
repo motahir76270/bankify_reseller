@@ -6,10 +6,14 @@ const walletSlice = createSlice({
   name: "wallet",
   initialState: {
     walletHistoryData: [],
+    walletBalance:[]
   },
   reducers: {
       setWalletHistory: (state, actions) => {
       state.walletHistoryData = actions.payload;
+    },
+     setWalletBalanceData: (state, actions) => {
+      state.walletBalance = actions.payload;
     },
      setLoading: (state, actions) => {
       state.loading = actions.payload;
@@ -17,7 +21,7 @@ const walletSlice = createSlice({
   },
 });
 
-export const { setWalletHistory ,setLoading} = walletSlice.actions;
+export const { setWalletHistory ,setWalletBalanceData,setLoading} = walletSlice.actions;
 
 export default walletSlice.reducer;
 
@@ -50,4 +54,33 @@ export const getWalletHistoryDataApiCall = async (payload,dispatch) => {
      dispatch(setLoading(false));
    }
 };
+
+
+export const WalletTransferApiCall = async (formdata,dispatch) => {
+  try {
+    dispatch(setLoading(true))
+    const { BASE_URL ,token} = await company();
+    const payload = {
+      amount: formdata?.amount, 
+      reference: formdata?.reference
+    }
+    const res = await fetch(`${BASE_URL}/wallet-to-wallet/${formdata?.id}/${formdata?.type}`, {
+      method: "POST",
+      body:JSON.stringify(payload),
+      headers: {
+         "Content-Type":"application/json",
+         Authorization: `Bearer ${token}`,
+      },
+     });
+  //  console.log(payload);
+   
+    const data = await res.json();
+    return data;
+   } catch (error) {
+      showError("Faled", error?.message || "server not respond")
+   }finally{
+     dispatch(setLoading(false));
+   }
+};
+
 

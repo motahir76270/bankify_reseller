@@ -133,7 +133,7 @@ const DomainScreen = () => {
             </Text>
           </View>
         ) : (
-          domains.map((item, idx) => {
+          domains?.map((item, idx) => {
             const sc = statusColors(item?.status);
             return (
               <View

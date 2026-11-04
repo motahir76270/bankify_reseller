@@ -1,10 +1,7 @@
 import { showError, showSuccess } from "@/components/service/AlertService";
 import { company } from "@/constants/string";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createSlice } from "@reduxjs/toolkit";
-import { router } from "expo-router";
-import { Alert } from "react-native";
-import axios from "axios";
+
 
 const usersSlice = createSlice({
   name: "users",

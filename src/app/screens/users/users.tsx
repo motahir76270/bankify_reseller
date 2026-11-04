@@ -1,6 +1,7 @@
 import AddUserModal from "@/components/modal/usersManagement/addUserModal";
 import EditUserModal from "@/components/modal/usersManagement/editUserModal";
 import UserPermissionModal from "@/components/modal/usersManagement/userPermissionModal";
+import WalletTransferModal from "@/components/modal/wallet/walletTransferModal";
 import HeaderSection from "@/components/ui/headerSections";
 import { Colors } from "@/constants/theme";
 import { FullScreenLoader } from "@/hooks/use-screensLoder";
@@ -14,6 +15,7 @@ import {
   ActivityIndicator,
   FlatList,
   Platform,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -68,7 +70,7 @@ const UsersScreen = () => {
   const dispatch = useDispatch();
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
-  const colors = Colors[isDark ? "dark" : "light"];
+  const colors = Colors[isDark ? "dark" : "light"] as any;
   const insets = useSafeAreaInsets();
 
   // ===== Auth: permissions =====
@@ -102,10 +104,28 @@ const UsersScreen = () => {
     [permissionSet, isSuperAdmin]
   );
 
-  // Button-level permissions
+  // ----- USER permissions -----
   const canCreateUser = can("USER", "CREATE");
   const canUpdateUser = can("USER", "UPDATE");
   const canAssignPermissions = can("USER", "ASSIGN_PERMISSIONS");
+
+  // ----- WALLET permissions (resource: WALLET_TO_WALLET) -----
+  const canWalletCredit = can("WALLET_TO_WALLET", "CREDIT");
+  const canWalletDebit = can("WALLET_TO_WALLET", "DEBIT");
+  const canWalletBlock = can("WALLET_TO_WALLET", "BLOCK");
+  const canWalletRelease = can("WALLET_TO_WALLET", "RELEASE");
+
+  const canWalletTransfer =
+    canWalletCredit || canWalletDebit || canWalletBlock || canWalletRelease;
+
+  const allowedWalletTypes = useMemo<any[]>(() => {
+    const t: any[] = [];
+    if (canWalletCredit) t.push("credit");
+    if (canWalletDebit) t.push("debit");
+    if (canWalletRelease) t.push("release");
+    if (canWalletBlock) t.push("block");
+    return t;
+  }, [canWalletCredit, canWalletDebit, canWalletRelease, canWalletBlock]);
 
   // ===== Users list =====
   const { usersList, loading } = useSelector((state: any) => state.users);
@@ -115,11 +135,18 @@ const UsersScreen = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [addVisible, setAddVisible] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
   const [permVisible, setPermVisible] = useState(false);
   const [selected, setSelected] = useState<User | null>(null);
+
+  // Wallet modal state — only id is passed
+  const [walletVisible, setWalletVisible] = useState(false);
+  const [walletUserId, setWalletUserId] = useState<any | null>(
+    null
+  );
 
   // Filter states
   const [search, setSearch] = useState("");
@@ -132,7 +159,7 @@ const UsersScreen = () => {
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
 
-  // Refs to manage race conditions
+  // Refs
   const isFetchingRef = useRef(false);
   const currentPageRef = useRef(1);
   const appendedPagesRef = useRef<Set<number>>(new Set());
@@ -151,7 +178,6 @@ const UsersScreen = () => {
     toDate: toDate ? formatDate(toDate) : "",
   });
 
-  // ----- Fetch first page whenever filters change -----
   useEffect(() => {
     filtersSignatureRef.current = filtersSignature;
     appendedPagesRef.current = new Set([1]);
@@ -173,9 +199,8 @@ const UsersScreen = () => {
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, statusFilter, fromDate, toDate]);
+  }, [search, statusFilter, fromDate, toDate, dispatch]);
 
-  // ----- Sync redux response into local list -----
   useEffect(() => {
     const currentPage = currentPageRef.current;
 
@@ -194,12 +219,12 @@ const UsersScreen = () => {
     setLoadingMore(false);
   }, [apiUsers]);
 
-  // ----- Load more on scroll -----
   const loadMore = useCallback(async () => {
     if (
       !hasMore ||
       loading ||
       loadingMore ||
+      refreshing ||
       isFetchingRef.current ||
       allUsers.length === 0
     ) {
@@ -225,6 +250,7 @@ const UsersScreen = () => {
     hasMore,
     loading,
     loadingMore,
+    refreshing,
     allUsers.length,
     search,
     statusFilter,
@@ -246,6 +272,25 @@ const UsersScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusFilter, fromDate, toDate]);
 
+  const onRefresh = useCallback(async () => {
+    if (isFetchingRef.current) return;
+
+    setRefreshing(true);
+    appendedPagesRef.current = new Set([1]);
+    currentPageRef.current = 1;
+    setPage(1);
+    setHasMore(true);
+    isFetchingRef.current = true;
+
+    try {
+      await getUsersListApiCall(buildPayload(1), dispatch);
+    } finally {
+      isFetchingRef.current = false;
+      setRefreshing(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, statusFilter, fromDate, toDate]);
+
   const handleEdit = (user: User) => {
     if (!canUpdateUser) return;
     setSelected(user);
@@ -256,6 +301,12 @@ const UsersScreen = () => {
     if (!canAssignPermissions) return;
     setSelected(user);
     setPermVisible(true);
+  };
+
+  const handleWalletTransfer = (user: any) => {
+    if (!canWalletTransfer) return;
+    setWalletUserId(user);
+    setWalletVisible(true);
   };
 
   const onFromChange = (event: any, date?: Date) => {
@@ -307,17 +358,18 @@ const UsersScreen = () => {
     const status = (item.userStatus ?? item.status ?? "ACTIVE").toUpperCase();
     const isActive = status === "ACTIVE";
 
-    // Only show the action row if the user can do at least one of the actions
-    const showActionRow = canUpdateUser || canAssignPermissions;
+    const showActionRow =
+      canUpdateUser || canAssignPermissions || canWalletTransfer;
+
+    const showPermEditDivider = canAssignPermissions && canUpdateUser;
+    const showWalletDivider =
+      canWalletTransfer && (canUpdateUser || canAssignPermissions);
 
     return (
       <View
         style={[
           styles.card,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
+          { backgroundColor: colors.card, borderColor: colors.border },
         ]}
       >
         <View style={styles.cardTop}>
@@ -384,7 +436,7 @@ const UsersScreen = () => {
               </TouchableOpacity>
             )}
 
-            {canAssignPermissions && canUpdateUser && (
+            {showPermEditDivider && (
               <View
                 style={[
                   styles.verticalDivider,
@@ -409,6 +461,32 @@ const UsersScreen = () => {
                 </Text>
               </TouchableOpacity>
             )}
+
+            {showWalletDivider && (
+              <View
+                style={[
+                  styles.verticalDivider,
+                  { backgroundColor: colors.border },
+                ]}
+              />
+            )}
+
+            {canWalletTransfer && (
+              <TouchableOpacity
+                style={styles.actionBtn}
+                activeOpacity={0.7}
+                onPress={() => handleWalletTransfer(item)}
+              >
+                <Ionicons
+                  name="wallet-outline"
+                  size={16}
+                  color={colors.buttonPrimary}
+                />
+                <Text style={[styles.actionText, { color: colors.text }]}>
+                  Wallet
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>
@@ -427,7 +505,7 @@ const UsersScreen = () => {
     );
   };
 
-  const showInitialLoader = loading && allUsers.length === 0;
+  const showInitialLoader = loading && allUsers.length === 0 && !refreshing;
 
   return (
     <LinearGradient
@@ -439,15 +517,7 @@ const UsersScreen = () => {
       <HeaderSection title="Users" />
 
       {/* Filter Bar */}
-      <View
-        style={[
-          styles.filterBar,
-          {
-            borderBottomColor: colors.border,
-          },
-        ]}
-      >
-        {/* Search row */}
+      <View style={[styles.filterBar, { borderBottomColor: colors.border }]}>
         <View style={styles.searchRow}>
           <View
             style={[
@@ -458,7 +528,11 @@ const UsersScreen = () => {
               },
             ]}
           >
-            <Ionicons name="search-outline" size={16} color={colors.textMuted} />
+            <Ionicons
+              name="search-outline"
+              size={16}
+              color={colors.textMuted}
+            />
             <TextInput
               value={search}
               onChangeText={setSearch}
@@ -500,10 +574,8 @@ const UsersScreen = () => {
           </TouchableOpacity>
         </View>
 
-        {/* Filter panel */}
         {showFilters && (
           <>
-            {/* Status chips */}
             <View style={styles.chipRow}>
               {statusFilters.map((s) => {
                 const active = statusFilter === s;
@@ -537,7 +609,6 @@ const UsersScreen = () => {
               })}
             </View>
 
-            {/* Date range */}
             <View style={styles.dateRow}>
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -610,7 +681,6 @@ const UsersScreen = () => {
               </TouchableOpacity>
             </View>
 
-            {/* Clear filters */}
             {hasActiveFilters && (
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -630,7 +700,6 @@ const UsersScreen = () => {
           </>
         )}
 
-        {/* Date pickers */}
         {showFromPicker && (
           <DateTimePicker
             value={fromDate ?? new Date()}
@@ -665,7 +734,17 @@ const UsersScreen = () => {
             padding: 6,
             paddingBottom: insets.bottom + 120,
             gap: 0,
+            flexGrow: 1,
           }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.buttonPrimary}
+              colors={[colors.buttonPrimary]}
+              progressBackgroundColor={colors.card}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.center}>
               <Ionicons
@@ -687,7 +766,6 @@ const UsersScreen = () => {
         />
       )}
 
-      {/* FAB — only if USER:CREATE */}
       {canCreateUser && (
         <TouchableOpacity
           activeOpacity={0.85}
@@ -736,12 +814,26 @@ const UsersScreen = () => {
         />
       )}
 
-      <FullScreenLoader loading={loading && allUsers.length === 0} />
+      {/* Wallet Transfer Modal — only id, no onSuccess */}
+      {walletVisible && walletUserId != null && (
+        <WalletTransferModal
+          visible={walletVisible}
+          user={walletUserId}
+          onClose={() => {
+            setWalletVisible(false);
+            setWalletUserId(null);
+          }}
+        />
+      )}
+
+      <FullScreenLoader loading={loading && allUsers.length === 0 && !refreshing} />
     </LinearGradient>
   );
 };
 
 export default UsersScreen;
+
+/* --------------------------- Styles ------------------------------ */
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -800,16 +892,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
   },
-  chipText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
+  chipText: { fontSize: 12, fontWeight: "700" },
 
-  dateRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 10,
-  },
+  dateRow: { flexDirection: "row", gap: 10, marginTop: 10 },
   dateBox: {
     flex: 1,
     flexDirection: "row",
@@ -820,11 +905,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
   },
-  dateText: {
-    flex: 1,
-    fontSize: 12.5,
-    fontWeight: "600",
-  },
+  dateText: { flex: 1, fontSize: 12.5, fontWeight: "600" },
   clearBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -832,10 +913,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     alignSelf: "flex-start",
   },
-  clearText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
+  clearText: { fontSize: 12, fontWeight: "700" },
 
   card: { borderRadius: 4, borderWidth: 1, padding: 14 },
   cardTop: { flexDirection: "row", alignItems: "center", gap: 12 },
@@ -885,10 +963,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 6,
   },
-  footerText: {
-    fontSize: 12,
-    fontWeight: "500",
-  },
+  footerText: { fontSize: 12, fontWeight: "500" },
 
   fab: {
     position: "absolute",

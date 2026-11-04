@@ -1,9 +1,7 @@
 import { Colors } from "@/constants/theme";
 import { onLocation } from "@/hooks/use-location";
 import { FullScreenLoader } from "@/hooks/use-screensLoder";
-import {
-  getTenetUserApiCall
-} from "@/redux/slices/authSlice";
+import { getTenetUserApiCall } from "@/redux/slices/authSlice";
 import AuthValiation from "@/validations/auth";
 import { Ionicons } from "@expo/vector-icons";
 import { zodResolver } from "@hookform/resolvers/zod";

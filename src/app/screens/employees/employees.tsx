@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   FlatList,
   Platform,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -119,6 +120,7 @@ const EmployeesScreen = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [addVisible, setAddVisible] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
@@ -197,6 +199,7 @@ const EmployeesScreen = () => {
       !hasMore ||
       loading ||
       loadingMore ||
+      refreshing ||
       isFetchingRef.current ||
       allEmployees.length === 0
     ) {
@@ -222,6 +225,7 @@ const EmployeesScreen = () => {
     hasMore,
     loading,
     loadingMore,
+    refreshing,
     allEmployees.length,
     search,
     statusFilter,
@@ -239,6 +243,25 @@ const EmployeesScreen = () => {
       await getEmployeesListApiCall(buildPayload(1), dispatch);
     } finally {
       isFetchingRef.current = false;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, statusFilter, fromDate, toDate]);
+
+  const onRefresh = useCallback(async () => {
+    if (isFetchingRef.current) return;
+
+    setRefreshing(true);
+    appendedPagesRef.current = new Set([1]);
+    currentPageRef.current = 1;
+    setPage(1);
+    setHasMore(true);
+    isFetchingRef.current = true;
+
+    try {
+      await getEmployeesListApiCall(buildPayload(1), dispatch);
+    } finally {
+      isFetchingRef.current = false;
+      setRefreshing(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, statusFilter, fromDate, toDate]);
@@ -419,7 +442,7 @@ const EmployeesScreen = () => {
     );
   };
 
-  const showInitialLoader = loading && allEmployees.length === 0;
+  const showInitialLoader = loading && allEmployees.length === 0 && !refreshing;
 
   return (
     <LinearGradient
@@ -650,7 +673,17 @@ const EmployeesScreen = () => {
             padding: 16,
             paddingBottom: insets.bottom + 120,
             gap: 12,
+            flexGrow: 1,
           }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.buttonPrimary}
+              colors={[colors.buttonPrimary]}
+              progressBackgroundColor={colors.card}
+            />
+          }
           ListEmptyComponent={
             <View style={styles.center}>
               <Ionicons
