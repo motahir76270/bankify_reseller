@@ -4,7 +4,7 @@ import { Colors } from "@/constants/theme";
 import { FullScreenLoader } from "@/hooks/use-screensLoder";
 import {
   getPendaingAprovalBankAccountListApiCall,
-  udateStatusBankAccountApiCall,
+  updateStatusBankAccountApiCall,
 } from "@/redux/slices/bankAccountSlice";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -184,7 +184,7 @@ const PendingAprovalsScreen = () => {
       approvalNotes: "",
       rejectionReason: "",
     };
-    await udateStatusBankAccountApiCall(payload, "approve", dispatch);
+    await updateStatusBankAccountApiCall(payload, "approve", dispatch);
     await fetchBankAccounts(filter, search);
   };
 
@@ -210,7 +210,7 @@ const PendingAprovalsScreen = () => {
       bankDetailId: rejectAccount.id,
       rejectionReason: rejectionReason.trim(),
     };
-    await udateStatusBankAccountApiCall(payload, "reject", dispatch);
+    await updateStatusBankAccountApiCall(payload, "reject", dispatch);
     closeRejectForm();
     await fetchBankAccounts(filter, search);
   };

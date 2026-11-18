@@ -12,7 +12,7 @@ export const Colors = {
     text: '#000000',
     textMuted: '#666666',
 
-    background: '#FDFFFD',
+    background: '#f1f1f1e8',
     backgroundTop: '#d1e0e2',
     backgroundBottom: '#cadfe9',
     surface: '#F0F0F3',
@@ -25,13 +25,13 @@ export const Colors = {
     surfaceSecondary: '#F0F3F5',
     surfaceTertiary: '#dbe5e6',
 
-    border: '#dadada',
+    border: '#f1efef5b',
 
     error: '#EC0808',
     success: '#53C03D',
     warning: '#D3D00F',
 
-    card: '#dde9e9de',
+    card: '#eaf3f33b',
     buttonPrimary: '#5940CA',
   },
 

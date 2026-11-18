@@ -5,7 +5,6 @@ import WalletTransferModal from "@/components/modal/wallet/walletTransferModal";
 import HeaderSection from "@/components/ui/headerSections";
 import { Colors } from "@/constants/theme";
 import { FullScreenLoader } from "@/hooks/use-screensLoder";
-import { getMeApiCall } from "@/redux/slices/authSlice";
 import { getUsersListApiCall } from "@/redux/slices/userMangementSlice";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";

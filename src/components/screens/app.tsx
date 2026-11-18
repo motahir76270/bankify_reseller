@@ -1,12 +1,26 @@
-import { View, Text } from 'react-native'
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Stack } from 'expo-router'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 
 const AppScreens = () => {
+   const [user, setUser] = useState<any>([])
+  useEffect(()=> {
+    const Fetch = async()=> {
+      const token = JSON.parse(await AsyncStorage.getItem('token') as any)
+      const user = JSON.parse(await AsyncStorage.getItem('user') as any)
+      setUser({token,user})
+    }
+     Fetch();
+  },[])
+
+  
   return (
-     <Stack initialRouteName='(auth)' screenOptions={{headerShown:false}}>
+     <Stack screenOptions={{headerShown:false}}>
+      { user?.user === null && user?.token === null   ?
         <Stack.Screen name='(auth)' />
+        :
         <Stack.Screen name='(tabs)' />
+      }
 
         <Stack.Screen name='screens/config/server' />
         <Stack.Screen name='screens/config/smtp' />
@@ -14,10 +28,14 @@ const AppScreens = () => {
        
         <Stack.Screen name='screens/services/payout/payout' />
         <Stack.Screen name='screens/services/payout/ministate' />
+
         <Stack.Screen name='screens/services/fundRequest' />
+
         <Stack.Screen name='screens/services/expressTransfer/ETHistory' />
         <Stack.Screen name='screens/services/expressTransfer/page' />
 
+        <Stack.Screen name='screens/services/aeps/aeps' />
+        <Stack.Screen name='screens/services/aeps/kyc' />
 
         <Stack.Screen name='screens/administration/auditLogs' />
         <Stack.Screen name='screens/administration/ledger' />

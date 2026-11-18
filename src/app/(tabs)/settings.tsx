@@ -228,7 +228,7 @@ const SettingsScreen = () => {
   // Pull-to-refresh state (kept separate from global `loading`)
   const [refreshing, setRefreshing] = useState(false);
 
-  const borderColor = isDark ? "#242838" : "#EEF0F4";
+  const borderColor = isDark ? colors.border : colors.border;
   const brandPrimary = isDark ? "#7C6BFF" : "#4F46E5";
 
   /* ---------------- Fetch user ---------------- */

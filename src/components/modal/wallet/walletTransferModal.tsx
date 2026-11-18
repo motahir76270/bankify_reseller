@@ -27,8 +27,7 @@ import {
 import { WalletTransferApiCall } from "@/redux/slices/walletSlice";
 import { showError, showSuccess } from "@/components/service/AlertService";
 
-/* ----------------------------- Types ----------------------------- */
-
+/* ---------------------------- Types ----------------------------- */
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -43,9 +42,9 @@ type Wallet = {
   availableBalance?: number;
   blockedAmount?: number;
 };
+ 
 
 /* ------------------------- Type Config --------------------------- */
-
 const TYPE_META: Record<
   WalletTransferType,
   {
@@ -88,7 +87,6 @@ const DEFAULT_VALUES: WalletTransferFormValues = {
 };
 
 /* --------------------------- Helpers ----------------------------- */
-
 const formatCurrency = (n?: number | null) => {
   const value = typeof n === "number" && !Number.isNaN(n) ? n : 0;
   return value.toLocaleString("en-IN", {
@@ -98,7 +96,6 @@ const formatCurrency = (n?: number | null) => {
 };
 
 /* --------------------------- Component --------------------------- */
-
 const WalletTransferModal = ({ visible, onClose, user }: Props) => {
   const dispatch = useDispatch();
   const scheme = useColorScheme();
@@ -116,6 +113,7 @@ const WalletTransferModal = ({ visible, onClose, user }: Props) => {
   const availableBalance = Number(wallet?.availableBalance ?? 0);
   const blockedAmount = Number(wallet?.blockedAmount ?? 0);
   const totalBalance = Number(wallet?.balance ?? availableBalance + blockedAmount);
+
 
   const {
     control,
@@ -148,7 +146,6 @@ const WalletTransferModal = ({ visible, onClose, user }: Props) => {
   /* -------- Submit -------- */
   const onSubmit: SubmitHandler<WalletTransferFormValues> = async (values) => {
     const isBlock = values.type === "block";
-
     const payload = {
       id: user?.id,
       type: values.type,
@@ -537,7 +534,6 @@ const WalletTransferModal = ({ visible, onClose, user }: Props) => {
 export default WalletTransferModal;
 
 /* --------------------------- Styles ------------------------------ */
-
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,

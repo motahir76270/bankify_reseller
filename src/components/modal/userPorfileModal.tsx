@@ -5,7 +5,6 @@ import {
   Alert,
   Modal,
   Pressable,
-  StatusBar,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -22,6 +21,7 @@ import { logoutApiCall } from "@/redux/slices/authSlice";
 type Props = {
   visible: boolean;
   onClose: () => void;
+
 };
 
 const UserProfileModal = ({ visible, onClose }: Props) => {
@@ -34,12 +34,19 @@ const UserProfileModal = ({ visible, onClose }: Props) => {
   const { user } = useSelector((state: any) => state.auth);
   const userData = user?.user ?? {};
 
-  /* ---------------- Theme ---------------- */
-  const cardBg = isDark ? "#141722" : colors.card;
-  const mutedBg = isDark ? "#1A1D2A" : "#F5F6FA";
-  const borderColor = isDark ? "#242838" : "#EEF0F4";
-  const brandPrimary = isDark ? "#7C6BFF" : "#4F46E5";
-  const dangerColor = "#EF4444";
+  /* ---------------- Theme tokens ---------------- */     
+  const menuBg = colors.surfaceSecondary;    // inner menu card
+  const chipBg = colors.surfaceTertiary;     // avatar / icon / pill bg
+  const borderColor = colors.border;
+  const brandPrimary = colors.buttonPrimary;
+  const dangerColor = colors.error;
+
+  /* ---------------- Display name ---------------- */
+  const displayName =
+    [userData?.firstName, userData?.lastName]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || "Guest User";
 
   /* ---------------- Logout ---------------- */
   const handleLogout = useCallback(() => {
@@ -68,32 +75,14 @@ const UserProfileModal = ({ visible, onClose }: Props) => {
   /* ---------------- Menu items ---------------- */
   const menuItems = [
     {
-      id: "profile",
-      label: "My Profile",
-      icon: "person-outline",
-      onPress: () => {
-        onClose?.();
-        router.push('/(tabs)/profile');
-      },
-    },
-    {
       id: "kyc",
-      label: "KYC Status",
+      label: "My KYC Status",
       icon: "shield-checkmark-outline",
       onPress: () => {
         onClose?.();
         router.push("/screens/administration/kyc/myKyc");
       },
-    },
-    {
-      id: "bank",
-      label: "Bank Accounts",
-      icon: "card-outline",
-      onPress: () => {
-        onClose?.();
-        router.push("/screens/administration/banks/myBanks");
-      },
-    },
+    }
   ];
 
   return (
@@ -104,19 +93,21 @@ const UserProfileModal = ({ visible, onClose }: Props) => {
       statusBarTranslucent
       onRequestClose={onClose}
     >
-
       {/* Backdrop */}
-      <Pressable style={styles.backdrop} onPress={onClose}>
+      <Pressable
+        style={[styles.backdrop, { backgroundColor: "rgba(0,0,0,0.45)" }]}
+        onPress={onClose}
+      >
         <Pressable
           style={[
             styles.sheet,
             {
-              backgroundColor: cardBg,
+              backgroundColor: colors.background,
               marginBottom: insets.bottom + 16,
               borderColor,
             },
           ]}
-          onPress={(e) => e.stopPropagation()}
+          onPress={() => {}}
         >
           {/* Drag handle */}
           <View style={[styles.handle, { backgroundColor: borderColor }]} />
@@ -126,7 +117,7 @@ const UserProfileModal = ({ visible, onClose }: Props) => {
             <View
               style={[
                 styles.avatar,
-                { backgroundColor: `${brandPrimary}18`, borderColor: `${brandPrimary}30` },
+                { backgroundColor: chipBg, borderColor },
               ]}
             >
               <Ionicons name="person" size={22} color={brandPrimary} />
@@ -137,7 +128,7 @@ const UserProfileModal = ({ visible, onClose }: Props) => {
                 style={[styles.userName, { color: colors.text }]}
                 numberOfLines={1}
               >
-                {userData?.firstName + " " + userData?.lastName || "Guest User"}
+                {displayName}
               </Text>
               <Text
                 style={[styles.userMeta, { color: colors.textSecondary }]}
@@ -150,7 +141,7 @@ const UserProfileModal = ({ visible, onClose }: Props) => {
             <View
               style={[
                 styles.rolePill,
-                { backgroundColor: `${brandPrimary}14`, borderColor: `${brandPrimary}30` },
+                { backgroundColor: chipBg, borderColor },
               ]}
             >
               <Text style={[styles.roleText, { color: brandPrimary }]}>
@@ -163,7 +154,7 @@ const UserProfileModal = ({ visible, onClose }: Props) => {
           <View
             style={[
               styles.menuCard,
-              { backgroundColor: mutedBg, borderColor },
+              { backgroundColor: menuBg, borderColor },
             ]}
           >
             {menuItems.map((item, idx) => (
@@ -172,11 +163,13 @@ const UserProfileModal = ({ visible, onClose }: Props) => {
                   style={styles.menuRow}
                   activeOpacity={0.7}
                   onPress={item.onPress}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.label}
                 >
                   <View
                     style={[
                       styles.menuIcon,
-                      { backgroundColor: `${brandPrimary}14` },
+                      { backgroundColor: chipBg },
                     ]}
                   >
                     <Ionicons
@@ -198,7 +191,7 @@ const UserProfileModal = ({ visible, onClose }: Props) => {
                   <View
                     style={[
                       styles.divider,
-                      { backgroundColor: borderColor, marginLeft: 44 },
+                      { backgroundColor: borderColor, marginLeft: 48 },
                     ]}
                   />
                 )}
@@ -211,12 +204,14 @@ const UserProfileModal = ({ visible, onClose }: Props) => {
             style={[
               styles.logoutBtn,
               {
-                backgroundColor: `${dangerColor}10`,
-                borderColor: `${dangerColor}30`,
+                backgroundColor: chipBg,
+                borderColor: dangerColor,
               },
             ]}
             activeOpacity={0.7}
             onPress={handleLogout}
+            accessibilityRole="button"
+            accessibilityLabel="Logout"
           >
             <Ionicons name="log-out-outline" size={16} color={dangerColor} />
             <Text style={[styles.logoutText, { color: dangerColor }]}>
@@ -229,6 +224,8 @@ const UserProfileModal = ({ visible, onClose }: Props) => {
             style={styles.cancelBtn}
             activeOpacity={0.6}
             onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel"
           >
             <Text style={[styles.cancelText, { color: colors.textSecondary }]}>
               Cancel
@@ -245,7 +242,6 @@ export default UserProfileModal;
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "flex-end",
   },
   sheet: {
@@ -253,19 +249,19 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 1,
     padding: 14,
-    paddingTop: 8,
+    paddingTop: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.18,
     shadowRadius: 16,
-    elevation: 12,
+    elevation: 8,
   },
   handle: {
     width: 36,
     height: 4,
     borderRadius: 2,
     alignSelf: "center",
-    marginBottom: 14,
+    marginBottom: 12,
     opacity: 0.6,
   },
 
@@ -318,8 +314,9 @@ const styles = StyleSheet.create({
   menuRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 10,
+    paddingVertical: 12,
     gap: 10,
+    minHeight: 44,
   },
   menuIcon: {
     width: 28,
@@ -346,6 +343,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 14,
     borderWidth: 1,
+    minHeight: 44,
   },
   logoutText: {
     fontSize: 13.5,
@@ -356,8 +354,10 @@ const styles = StyleSheet.create({
   /* Cancel */
   cancelBtn: {
     alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 10,
     marginTop: 4,
+    minHeight: 44,
   },
   cancelText: {
     fontSize: 12.5,

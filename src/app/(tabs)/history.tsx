@@ -21,7 +21,6 @@ import ViewTransactionHistoryModal from "@/components/modal/history/viewTransact
 import { LinearGradient } from "expo-linear-gradient";
 
 /* ----------------------------- Types ----------------------------- */
-
 type Transaction = {
   id: string;
   txnId: string;
@@ -79,7 +78,6 @@ const STATUS_OPTIONS: { label: string; value: StatusFilter }[] = [
 ];
 
 /* --------------------------- Helpers ----------------------------- */
-
 const parseJSON = <T,>(input: any): T | null => {
   if (!input) return null;
   if (typeof input === "object") return input as T;
@@ -137,7 +135,6 @@ const getStatusColor = (status: string, colors: any) => {
 };
 
 /* --------------------------- Screen ------------------------------ */
-
 const TransactionHistoryScreen = () => {
   const dispatch = useDispatch();
   const scheme = useColorScheme();
@@ -351,7 +348,6 @@ const TransactionHistoryScreen = () => {
   };
 
   /* --------------------------- Render item (minimized) --------------------------- */
-
   const renderItem = ({ item }: { item: Transaction }) => {
     const provRes = parseJSON<Record<string, any>>(item.providerResponse);
     const statusColor = getStatusColor(item.status, colors);

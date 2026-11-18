@@ -232,7 +232,7 @@ export const getPendaingAprovalBankAccountListApiCall = async (filterPayload,dis
    }
 };
 
-export const udateStatusBankAccountApiCall = async (payload,status,dispatch) => {
+export const updateStatusBankAccountApiCall = async (payload,status,dispatch) => {
   try {
     console.log(payload);
     

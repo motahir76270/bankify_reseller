@@ -7,7 +7,7 @@ import React, {
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
 } from "react";
 import {
   ActivityIndicator,
@@ -19,7 +19,7 @@ import {
   StyleSheet,
   Text,
   useColorScheme,
-  View
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, {
@@ -28,9 +28,10 @@ import Svg, {
   LinearGradient as Linear,
   Path,
   RadialGradient,
-  Stop
+  Stop,
 } from "react-native-svg";
 import { useDispatch, useSelector } from "react-redux";
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 
 import { checkFundStatusApiCall } from "@/redux/slices/addFundSlice";
 import { getMeApiCall } from "@/redux/slices/authSlice";
@@ -41,7 +42,6 @@ import AddFundModal from "@/components/modal/addFund/minFundFormModal";
 import PendingStatusModal from "@/components/modal/addFund/pendingFundModal";
 import KycAlertModal from "@/components/modal/profileKyc/kycAlertModal";
 import UserProfileModal from "@/components/modal/userPorfileModal";
-import { showError } from "@/components/service/AlertService";
 import { FullScreenLoader } from "@/hooks/use-screensLoder";
 import { LinearGradient } from "expo-linear-gradient";
 
@@ -98,7 +98,7 @@ type DashboardData = {
 const DashboardScreen = () => {
   const scheme = useColorScheme();
   const isDark = scheme === "dark";
-  const colors = Colors[isDark ? "dark" : "light"]; 
+  const colors = Colors[isDark ? "dark" : "light"];
   const insets = useSafeAreaInsets();
 
   const dispatch = useDispatch();
@@ -111,7 +111,7 @@ const DashboardScreen = () => {
   /* ---------------- Theme tokens ---------------- */
   const cardBg = colors.card;
   const mutedBg = isDark ? "#141826" : "#F4F5F9";
-  const borderColor = isDark ? "#232838" : "#E7E9F2";
+  const borderColor = isDark ? colors.border : colors.border;
   const brandPrimary = isDark ? "#7C6BFF" : "#5B4CFF";
   const brandSecondary = isDark ? "#432BBA" : "#3730A3";
   const brandTertiary = isDark ? "#2A188C" : "#1E1B4B";
@@ -149,8 +149,7 @@ const DashboardScreen = () => {
         const res = await getMeApiCall(dispatch);
         const fundRes = await checkFundStatusApiCall(dispatch);
         const statusFundReq = fundRes?.at(0);
-          
-         
+
         if (
           res?.wallet?.balance === 0 &&
           res?.user?.isKycVerified === false &&
@@ -174,7 +173,7 @@ const DashboardScreen = () => {
           }
         }
       } catch (error) {
-        showError("Error fetching user");
+        // showError("Error fetching user");
         await AsyncStorage.removeItem("user");
         await AsyncStorage.removeItem("token");
       }
@@ -535,13 +534,13 @@ const DashboardScreen = () => {
               icon: "receipt-outline",
               label: "Payout",
               target: "Payout",
-              grad: ["#F59E0B", "#8b3333"] as [string, string],
+              grad: ["#f8a007", "#8b3333"] as [string, string],
             },
             {
               icon: "finger-print-outline",
               label: "AEPS",
               target: "AEPS",
-              grad: ["#6af0c8", "#dd9a9a"] as [string, string],
+              grad: ["#138563", "#dd9a9a"] as [string, string],
             },
           ].map((a) => (
             <ScalePressable
@@ -550,14 +549,15 @@ const DashboardScreen = () => {
               style={{ flex: 1 }}
             >
               <View style={styles.quickAction}>
-                <LinearGradient
-                  colors={a.grad}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.quickActionTile}
-                >
-                  <Ionicons name={a.icon as any} size={26} color="#FFFFFF" />
-                </LinearGradient>
+                <View
+                  style={[styles.quickActionTile, {backgroundColor:colors.card, borderColor:borderColor}]}
+                > 
+                {a?.target === "Payout" ? 
+                  <MaterialCommunityIcons name="bank-transfer" size={36} color={a?.grad[0]} />
+                : 
+                  <Ionicons name={a.icon as any} size={36} color={a?.grad[0]} />
+                }
+                </View>
                 <Text style={[styles.quickActionLabel, { color: colors.text }]}>
                   {a.label}
                 </Text>
@@ -571,7 +571,6 @@ const DashboardScreen = () => {
           title="Overview"
           icon="stats-chart-outline"
           colors={colors}
-          trailing={`${formatNumber(data?.hierarchy?.visibleUserCount ?? 0)} in hierarchy`}
           brandPrimary={brandPrimary}
         >
           <View style={styles.statsGrid}>
@@ -1164,15 +1163,6 @@ const Section = ({
           {title}
         </Text>
       </View>
-      {!!trailing && (
-        <View
-          style={[styles.sectionPill, { backgroundColor: `${brandPrimary}12` }]}
-        >
-          <Text style={[styles.sectionPillText, { color: brandPrimary }]}>
-            {trailing}
-          </Text>
-        </View>
-      )}
     </View>
     {children}
   </View>
@@ -1572,16 +1562,12 @@ const styles = StyleSheet.create({
   },
   quickAction: { alignItems: "center", gap: 8 },
   quickActionTile: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
+    padding:10,
+    borderRadius: 8,
+    borderWidth:1,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
   },
   quickActionLabel: { fontSize: 12, fontWeight: "700", letterSpacing: 0.1 },
 
@@ -1602,7 +1588,7 @@ const styles = StyleSheet.create({
   sectionPillText: { fontSize: 10.5, fontWeight: "800", letterSpacing: 0.2 },
 
   card: {
-    borderRadius: 18,
+    borderRadius: 6,
     borderWidth: 1,
     paddingHorizontal: 14,
     paddingVertical: 4,
@@ -1612,7 +1598,7 @@ const styles = StyleSheet.create({
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   statCard: {
     width: "48.4%",
-    borderRadius: 16,
+    borderRadius: 6,
     borderWidth: 1,
     padding: 14,
     gap: 8,
